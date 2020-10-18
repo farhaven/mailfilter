@@ -1,5 +1,11 @@
 package main
 
+import (
+	"fmt"
+	"math"
+	"strings"
+)
+
 type Word struct {
 	Total int
 	Spam  int
