@@ -323,6 +323,7 @@ func (c Classifier) Classify(text string) (ClassificationResult, error) {
 
 	result := ClassificationResult{
 		Score: a / (a + b),
+		Label: "ham",
 	}
 
 	if result.Score > c.thresholdUnsure {
