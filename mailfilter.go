@@ -51,16 +51,19 @@ func writeMessage(msg *mail.Message, out io.Writer) (io.Reader, error) {
 
 // train reads text from in and trains the given classifier to recognize
 // the text as ham or spam, depending on the spam flag.
-func train(in io.Reader, c Classifier, spam bool) error {
+func train(in io.Reader, c Classifier, spam, verbose bool) error {
 	scanner := bufio.NewScanner(in)
 	scanner.Split(bufio.ScanWords)
 
+	words := 0
 	for scanner.Scan() {
 		word := scanner.Text()
-		err := c.Train(word, spam)
-		if err != nil {
-			return fmt.Errorf("training word %q (spam: %t): %w", word, spam, err)
-		}
+		c.Train(word, spam)
+		words++
+	}
+
+	if verbose {
+		log.Println("trained", words, "words", spam)
 	}
 
 	return nil
@@ -126,6 +129,7 @@ func main() {
 	}
 
 	dump := flag.Bool("dump", false, "dump frequency data to stdout")
+	verbose := flag.Bool("verbose", false, "be more verbose during training")
 	mode := flag.String("mode", "classify", "What do do with the message. One of [classify, spam, ham].")
 	dbPath := flag.String("dbPath", filepath.Join(user.HomeDir, ".mailfilter.db"), "path to word database")
 	thresholdUnsure := flag.Float64("thresholdUnsure", 0.3, "Mail with score above this value will be classified as 'unsure'")
@@ -152,10 +156,11 @@ func main() {
 	log.Println("database open")
 
 	c := NewClassifier(db, *thresholdUnsure, *thresholdSpam)
+	defer c.Persist(*verbose)
 
 	switch *mode {
 	case "ham", "spam":
-		err = train(os.Stdin, c, *mode == "spam")
+		err = train(os.Stdin, c, *mode == "spam", *verbose)
 		if err != nil {
 			log.Fatalf("can't train message as %s: %s", *mode, err)
 		}
@@ -172,4 +177,6 @@ func main() {
 			log.Fatalf("can't dump word frequencies: %s", err)
 		}
 	}
+
+	log.Println("done")
 }

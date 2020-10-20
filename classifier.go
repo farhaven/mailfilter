@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"log"
 	"math"
 	"strconv"
 	"strings"
@@ -38,16 +39,99 @@ func (w Word) SpamLikelihood() float64 {
 type Classifier struct {
 	db *bolt.DB
 
+	spam  map[string]int // used during training, persisted in Close
+	total map[string]int // see above
+
 	thresholdUnsure float64
 	thresholdSpam   float64
 }
 
 func NewClassifier(db *bolt.DB, thresholdUnsure, thresholdSpam float64) Classifier {
 	return Classifier{
-		db:              db,
+		db: db,
+
+		spam:  make(map[string]int),
+		total: make(map[string]int),
+
 		thresholdUnsure: thresholdUnsure,
 		thresholdSpam:   thresholdSpam,
 	}
+}
+
+func (c Classifier) Persist(verbose bool) error {
+	if verbose {
+		log.Println("persisting updated training data", len(c.spam), len(c.total))
+	}
+
+	err := c.db.Update(func(tx *bolt.Tx) error {
+		totalBucket, err := tx.CreateBucketIfNotExists([]byte("total"))
+		if err != nil {
+			return errors.Wrap(err, "getting 'total' bucket")
+		}
+
+		spamBucket, err := tx.CreateBucketIfNotExists([]byte("spam"))
+		if err != nil {
+			return errors.Wrap(err, "getting 'spam' bucket")
+		}
+
+		if verbose {
+			log.Printf("> Total bucket: %#v", totalBucket.Stats())
+			log.Printf("> Spam bucket:  %#v", spamBucket.Stats())
+		}
+
+		for word, total := range c.total {
+			w := []byte(word)
+
+			var v int
+
+			d := totalBucket.Get(w)
+			if len(d) != 0 {
+				v, err = strconv.Atoi(string(d))
+				if err != nil {
+					return errors.Wrap(err, "parsing total")
+				}
+			}
+
+			err = totalBucket.Put(w, []byte(strconv.Itoa(v+total)))
+			if err != nil {
+				return errors.Wrap(err, "writing total value")
+			}
+		}
+
+		for word, spam := range c.spam {
+			// Record word as spam
+			w := []byte(word)
+
+			var v int
+
+			d := spamBucket.Get(w)
+			if len(d) != 0 {
+				v, err = strconv.Atoi(string(d))
+				if err != nil {
+					return errors.Wrap(err, "parsing spam count")
+				}
+			}
+
+			err = spamBucket.Put(w, []byte(strconv.Itoa(v+spam)))
+			if err != nil {
+				return errors.Wrap(err, "writing spam value")
+			}
+		}
+
+		if verbose {
+			log.Printf("< Total bucket: %#v", totalBucket.Stats())
+			log.Printf("< Spam bucket:  %#v", spamBucket.Stats())
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return errors.Wrap(err, "persisting frequency data")
+	}
+
+	return nil
+
 }
 
 func (c Classifier) Dump(out io.Writer) error {
@@ -128,63 +212,11 @@ func (c Classifier) getWord(word string) (Word, error) {
 }
 
 // Train classifies the given word as spam or not spam, training c for future recognition.
-func (c Classifier) Train(word string, spam bool) error {
-	// Increase total and (maybe) spam count for word
-	err := c.db.Update(func(tx *bolt.Tx) error {
-		b, err := tx.CreateBucketIfNotExists([]byte("total"))
-		if err != nil {
-			return errors.Wrap(err, "getting 'total' bucket")
-		}
-
-		w := []byte(word)
-
-		var v int
-
-		d := b.Get(w)
-		if len(d) != 0 {
-			v, err = strconv.Atoi(string(d))
-			if err != nil {
-				return errors.Wrap(err, "parsing total")
-			}
-		}
-
-		err = b.Put(w, []byte(strconv.Itoa(v+1)))
-		if err != nil {
-			return errors.Wrap(err, "writing total value")
-		}
-
-		if !spam {
-			return nil
-		}
-
-		// Record word as spam
-		b, err = tx.CreateBucketIfNotExists([]byte("spam"))
-		if err != nil {
-			return errors.Wrap(err, "getting 'spam' bucket")
-		}
-
-		v = 0
-		d = b.Get(w)
-		if len(d) != 0 {
-			v, err = strconv.Atoi(string(d))
-			if err != nil {
-				return errors.Wrap(err, "parsing spam count")
-			}
-		}
-
-		err = b.Put(w, []byte(strconv.Itoa(v+1)))
-		if err != nil {
-			return errors.Wrap(err, "writing spam value")
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		return fmt.Errorf("training %q (spam:%t): %w", word, spam, err)
+func (c Classifier) Train(word string, spam bool) {
+	c.total[word]++
+	if spam {
+		c.spam[word]++
 	}
-
-	return nil
 }
 
 func sigmoid(x float64) float64 {
