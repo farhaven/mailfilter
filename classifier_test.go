@@ -3,7 +3,10 @@ package main
 import (
 	"fmt"
 	"math"
+	"os"
 	"testing"
+
+	"github.com/boltdb/bolt"
 )
 
 func TestWord_SpamLikelihood(t *testing.T) {
@@ -68,7 +71,13 @@ func TestClassifier(t *testing.T) {
 		{"spam", true, 1},
 	}
 
-	c := NewClassifier()
+	db, err := bolt.Open("words.db", 0600, nil)
+	if err != nil {
+		t.Fatalf("can't open db file: %s", err)
+	}
+	defer db.Close()
+
+	c := NewClassifier(db)
 
 	for _, w := range words {
 		c.Train(w.word, w.spam)
@@ -76,7 +85,12 @@ func TestClassifier(t *testing.T) {
 
 	// Verify that the recorded spamminess is correct
 	for i, w := range words {
-		s := c.words[w.word].SpamLikelihood()
+		word, err := c.getWord(w.word)
+		if err != nil {
+			t.Fatalf("unexpected error: %s", err)
+		}
+
+		s := word.SpamLikelihood()
 		if s != w.expectScore {
 			t.Errorf("expected score %f, got %f for word %d: %v", w.expectScore, s, i, w)
 		}
@@ -97,7 +111,11 @@ func TestClassifier(t *testing.T) {
 	epsilon := 1e-4
 
 	for i, tc := range texts {
-		s := c.SpamLikelihood(tc.txt)
+		s, err := c.SpamLikelihood(tc.txt)
+		if err != nil {
+			t.Fatalf("unexpected error: %s", err)
+		}
+
 		if s < 0 {
 			t.Fatalf("score too low: %f", s)
 		}
@@ -134,4 +152,9 @@ func TestSigmoid(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMain(m *testing.M) {
+	os.Remove("words.db")
+	os.Exit(m.Run())
 }
