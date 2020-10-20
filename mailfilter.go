@@ -156,7 +156,14 @@ func main() {
 	log.Println("database open")
 
 	c := NewClassifier(db, *thresholdUnsure, *thresholdSpam)
-	defer c.Persist(*verbose)
+	defer func() {
+		err := c.Persist(*verbose)
+		if err != nil {
+			log.Panicf("can't persist db: %s", err)
+		}
+
+		log.Println("done")
+	}()
 
 	switch *mode {
 	case "ham", "spam":
@@ -177,6 +184,4 @@ func main() {
 			log.Fatalf("can't dump word frequencies: %s", err)
 		}
 	}
-
-	log.Println("done")
 }

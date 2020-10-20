@@ -7,6 +7,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/boltdb/bolt"
 	"github.com/pkg/errors"
@@ -58,33 +59,24 @@ func NewClassifier(db *bolt.DB, thresholdUnsure, thresholdSpam float64) Classifi
 	}
 }
 
-func (c Classifier) Persist(verbose bool) error {
-	if verbose {
-		log.Println("persisting updated training data", len(c.spam), len(c.total))
-	}
+type delta struct {
+	w string
+	d int
+}
 
-	err := c.db.Update(func(tx *bolt.Tx) error {
-		totalBucket, err := tx.CreateBucketIfNotExists([]byte("total"))
+func (c Classifier) persistDelta(bucketName string, deltas chan delta) error {
+	err := c.db.Batch(func(tx *bolt.Tx) error {
+		bucket, err := tx.CreateBucketIfNotExists([]byte(bucketName))
 		if err != nil {
-			return errors.Wrap(err, "getting 'total' bucket")
+			return fmt.Errorf("getting %q bucket: %w", bucketName, err)
 		}
 
-		spamBucket, err := tx.CreateBucketIfNotExists([]byte("spam"))
-		if err != nil {
-			return errors.Wrap(err, "getting 'spam' bucket")
-		}
-
-		if verbose {
-			log.Printf("> Total bucket: %#v", totalBucket.Stats())
-			log.Printf("> Spam bucket:  %#v", spamBucket.Stats())
-		}
-
-		for word, total := range c.total {
-			w := []byte(word)
+		for delta := range deltas {
+			word := []byte(delta.w)
 
 			var v int
 
-			d := totalBucket.Get(w)
+			d := bucket.Get(word)
 			if len(d) != 0 {
 				v, err = strconv.Atoi(string(d))
 				if err != nil {
@@ -92,42 +84,96 @@ func (c Classifier) Persist(verbose bool) error {
 				}
 			}
 
-			err = totalBucket.Put(w, []byte(strconv.Itoa(v+total)))
+			err = bucket.Put(word, []byte(strconv.Itoa(v+delta.d)))
 			if err != nil {
 				return errors.Wrap(err, "writing total value")
 			}
-		}
-
-		for word, spam := range c.spam {
-			// Record word as spam
-			w := []byte(word)
-
-			var v int
-
-			d := spamBucket.Get(w)
-			if len(d) != 0 {
-				v, err = strconv.Atoi(string(d))
-				if err != nil {
-					return errors.Wrap(err, "parsing spam count")
-				}
-			}
-
-			err = spamBucket.Put(w, []byte(strconv.Itoa(v+spam)))
-			if err != nil {
-				return errors.Wrap(err, "writing spam value")
-			}
-		}
-
-		if verbose {
-			log.Printf("< Total bucket: %#v", totalBucket.Stats())
-			log.Printf("< Spam bucket:  %#v", spamBucket.Stats())
 		}
 
 		return nil
 	})
 
 	if err != nil {
-		return errors.Wrap(err, "persisting frequency data")
+		return errors.Wrap(err, "persisting delta")
+	}
+
+	return nil
+}
+
+func (c Classifier) Persist(verbose bool) error {
+	if verbose {
+		log.Println("persisting updated training data", len(c.spam), len(c.total))
+
+		err := c.db.View(func(tx *bolt.Tx) error {
+			totalBucket := tx.Bucket([]byte("total"))
+			if totalBucket != nil {
+				log.Printf("> Total bucket: %#v", totalBucket.Stats())
+			}
+
+			spamBucket := tx.Bucket([]byte("spam"))
+			if spamBucket != nil {
+				log.Printf("> Spam bucket:  %#v", spamBucket.Stats())
+			}
+
+			return nil
+		})
+
+		if err != nil {
+			return errors.Wrap(err, "getting bucket stats")
+		}
+	}
+	log.Println("persist:", verbose)
+
+	const concurrency = 8
+
+	for _, label := range []string{"total", "spam"} {
+		log.Println("label", label)
+
+		var wg sync.WaitGroup
+		wg.Add(concurrency)
+
+		deltas := make(chan delta)
+		for idx := 0; idx < concurrency; idx++ {
+			log.Println("starting persister", idx)
+
+			go func() {
+				defer wg.Done()
+				err := c.persistDelta(label, deltas)
+				if err != nil {
+					log.Panicf("failed to persist %s: %s", label, err)
+				}
+			}()
+		}
+
+		for word, diff := range c.total {
+			deltas <- delta{
+				w: word,
+				d: diff,
+			}
+		}
+
+		close(deltas)
+		wg.Wait()
+	}
+
+	if verbose {
+		err := c.db.View(func(tx *bolt.Tx) error {
+			totalBucket := tx.Bucket([]byte("total"))
+			if totalBucket != nil {
+				log.Printf("< Total bucket: %#v", totalBucket.Stats())
+			}
+
+			spamBucket := tx.Bucket([]byte("spam"))
+			if spamBucket != nil {
+				log.Printf("< Spam bucket:  %#v", spamBucket.Stats())
+			}
+
+			return nil
+		})
+
+		if err != nil {
+			return errors.Wrap(err, "getting bucket stats")
+		}
 	}
 
 	return nil
