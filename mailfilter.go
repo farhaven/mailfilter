@@ -20,6 +20,7 @@ import (
 
 	"github.com/boltdb/bolt"
 	"github.com/pkg/errors"
+	"github.com/pkg/profile"
 )
 
 // writeMessage writes msg to out and returns a copy of out's body
@@ -131,6 +132,8 @@ func main() {
 	thresholdSpam := flag.Float64("thresholdSpam", 0.7, "Mail with score above this value will be classified as 'spam'")
 
 	flag.Parse()
+
+	defer profile.Start(profile.ProfilePath("/tmp")).Stop()
 
 	switch *mode {
 	case "classify", "ham", "spam":
