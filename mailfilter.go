@@ -147,6 +147,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	if *thresholdUnsure >= *thresholdSpam {
+		fmt.Fprintf(flag.CommandLine.Output(), "Threshold for 'unknown' must be lower than threshold for 'spam'\n\n")
+		flag.PrintDefaults()
+		os.Exit(1)
+	}
+
 	db, err := bolt.Open(*dbPath, 0600, &bolt.Options{})
 	if err != nil {
 		log.Fatalf("can't open database: %s", err)
