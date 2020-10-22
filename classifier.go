@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"io"
 	"log"
@@ -22,7 +23,7 @@ func ScanWords(data []byte, atEOF bool) (advance int, token []byte, err error) {
 		return 0, nil, err
 	}
 
-	t = exprWord.ReplaceAll(t, nil)
+	t = exprWord.ReplaceAll(bytes.ToLower(t), nil)
 
 	return a, t, nil
 }
