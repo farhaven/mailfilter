@@ -1,17 +1,31 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"log"
 	"math"
+	"regexp"
 	"strconv"
-	"strings"
 	"sync"
 
 	"github.com/boltdb/bolt"
 	"github.com/pkg/errors"
 )
+
+var exprWord = regexp.MustCompile(`[^\p{Ll}]*`)
+
+func ScanWords(data []byte, atEOF bool) (advance int, token []byte, err error) {
+	a, t, err := bufio.ScanWords(data, atEOF)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	t = exprWord.ReplaceAll(t, nil)
+
+	return a, t, nil
+}
 
 type Word struct {
 	Total int
@@ -65,13 +79,13 @@ type delta struct {
 }
 
 func (c Classifier) persistDelta(bucketName string, deltas chan delta) error {
-	err := c.db.Batch(func(tx *bolt.Tx) error {
-		bucket, err := tx.CreateBucketIfNotExists([]byte(bucketName))
-		if err != nil {
-			return fmt.Errorf("getting %q bucket: %w", bucketName, err)
-		}
+	for delta := range deltas {
+		err := c.db.Update(func(tx *bolt.Tx) error {
+			bucket, err := tx.CreateBucketIfNotExists([]byte(bucketName))
+			if err != nil {
+				return fmt.Errorf("getting %q bucket: %w", bucketName, err)
+			}
 
-		for delta := range deltas {
 			word := []byte(delta.w)
 
 			var v int
@@ -88,13 +102,13 @@ func (c Classifier) persistDelta(bucketName string, deltas chan delta) error {
 			if err != nil {
 				return errors.Wrap(err, "writing total value")
 			}
+
+			return nil
+		})
+
+		if err != nil {
+			return errors.Wrap(err, "persisting delta")
 		}
-
-		return nil
-	})
-
-	if err != nil {
-		return errors.Wrap(err, "persisting delta")
 	}
 
 	return nil
@@ -126,8 +140,6 @@ func (c Classifier) Persist(verbose bool) error {
 	const concurrency = 8
 
 	for _, label := range []string{"total", "spam"} {
-		log.Println("label", label)
-
 		var wg sync.WaitGroup
 		wg.Add(concurrency)
 
@@ -150,6 +162,8 @@ func (c Classifier) Persist(verbose bool) error {
 		if label == "spam" {
 			source = c.spam
 		}
+
+		log.Println("label", label, "with", len(source), "delta entries")
 
 		for word, diff := range source {
 			deltas <- delta{
@@ -293,16 +307,16 @@ func (c ClassificationResult) String() string {
 }
 
 // Classify classifies the given text and returns a label along with a "certainty" value for that label.
-func (c Classifier) Classify(text string) (ClassificationResult, error) {
+func (c Classifier) Classify(text io.Reader) (ClassificationResult, error) {
 	// TODO: This doesn't deal with float underflows. That's probably not good.
 	//       Calculating this stuff in the log-domain doesn't seem to work though,
 	//       or I'm too stupid. That seems more likely.
-
-	words := strings.Fields(text)
+	scanner := bufio.NewScanner(text)
+	scanner.Split(bufio.ScanWords)
 
 	var scores []float64
-	for _, w := range words {
-		word, err := c.getWord(w)
+	for scanner.Scan() {
+		word, err := c.getWord(scanner.Text())
 		if err != nil {
 			return ClassificationResult{}, errors.Wrap(err, "getting word counts")
 		}

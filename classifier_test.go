@@ -1,14 +1,44 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
 	"math"
 	"os"
+	"regexp"
+	"strconv"
 	"testing"
 
 	"github.com/boltdb/bolt"
 )
+
+func TestScan(t *testing.T) {
+	testCases := []struct {
+		txt string
+	}{
+		{txt: "foo, bar asd2123aaa yellow :)  "},
+		{txt: "green GREEN grEEn gr33n"},
+	}
+
+	expr := regexp.MustCompile(`^[\p{Ll}]*$`)
+
+	for idx, tc := range testCases {
+		t.Run(strconv.Itoa(idx), func(t *testing.T) {
+			buf := bytes.NewBufferString(tc.txt)
+
+			scanner := bufio.NewScanner(buf)
+			scanner.Split(ScanWords)
+
+			for scanner.Scan() {
+				word := scanner.Text()
+				if !expr.Match([]byte(word)) {
+					t.Errorf("%q does not match %s", word, expr)
+				}
+			}
+		})
+	}
+}
 
 func TestWord_SpamLikelihood(t *testing.T) {
 	testCases := []struct {
@@ -118,7 +148,9 @@ func TestClassifier(t *testing.T) {
 	epsilon := 1e-4
 
 	for i, tc := range texts {
-		s, err := c.Classify(tc.txt)
+		buf := bytes.NewBufferString(tc.txt)
+
+		s, err := c.Classify(buf)
 		if err != nil {
 			t.Fatalf("unexpected error: %s", err)
 		}

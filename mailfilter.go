@@ -13,6 +13,8 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
+	_ "net/http/pprof"
 	"net/mail"
 	"os"
 	"os/user"
@@ -84,7 +86,7 @@ func classify(in io.Reader, c Classifier, out io.Writer) error {
 		return errors.Wrap(err, "reading into temp. buffer")
 	}
 
-	label, err := c.Classify(buf.String())
+	label, err := c.Classify(&buf)
 	if err != nil {
 		return errors.Wrap(err, "classifying")
 	}
@@ -134,10 +136,21 @@ func main() {
 	dbPath := flag.String("dbPath", filepath.Join(user.HomeDir, ".mailfilter.db"), "path to word database")
 	thresholdUnsure := flag.Float64("thresholdUnsure", 0.3, "Mail with score above this value will be classified as 'unsure'")
 	thresholdSpam := flag.Float64("thresholdSpam", 0.7, "Mail with score above this value will be classified as 'spam'")
+	profilingAddr := flag.String("profilingAddr", "127.0.0.1:7999", "Listening address for profiling server")
 
 	flag.Parse()
 
-	defer profile.Start(profile.ProfilePath("/tmp")).Stop()
+	go func() {
+		log.Println("starting profiling server on", *profilingAddr)
+		err := http.ListenAndServe(*profilingAddr, nil)
+		if err != nil {
+			log.Printf("can't start profiling server on %s: %s", *profilingAddr, err)
+		}
+	}()
+
+	if *profilingAddr == "" {
+		defer profile.Start(profile.ProfilePath("/tmp")).Stop()
+	}
 
 	switch *mode {
 	case "classify", "ham", "spam":
