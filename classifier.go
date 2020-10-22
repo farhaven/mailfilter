@@ -79,8 +79,8 @@ type delta struct {
 }
 
 func (c Classifier) persistDelta(bucketName string, deltas chan delta) error {
-	for delta := range deltas {
-		err := c.db.Update(func(tx *bolt.Tx) error {
+	err := c.db.Update(func(tx *bolt.Tx) error {
+		for delta := range deltas {
 			bucket, err := tx.CreateBucketIfNotExists([]byte(bucketName))
 			if err != nil {
 				return fmt.Errorf("getting %q bucket: %w", bucketName, err)
@@ -102,13 +102,13 @@ func (c Classifier) persistDelta(bucketName string, deltas chan delta) error {
 			if err != nil {
 				return errors.Wrap(err, "writing total value")
 			}
-
-			return nil
-		})
-
-		if err != nil {
-			return errors.Wrap(err, "persisting delta")
 		}
+
+		return nil
+	})
+
+	if err != nil {
+		return errors.Wrap(err, "persisting delta")
 	}
 
 	return nil
