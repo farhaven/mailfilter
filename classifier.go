@@ -163,7 +163,9 @@ func (c Classifier) Persist(verbose bool) error {
 			source = c.spam
 		}
 
-		log.Println("label", label, "with", len(source), "delta entries")
+		if verbose {
+			log.Println("label", label, "with", len(source), "delta entries")
+		}
 
 		for word, diff := range source {
 			deltas <- delta{
