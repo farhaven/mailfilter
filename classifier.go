@@ -146,7 +146,12 @@ func (c Classifier) Persist(verbose bool) error {
 			}()
 		}
 
-		for word, diff := range c.total {
+		source := c.total
+		if label == "spam" {
+			source = c.spam
+		}
+
+		for word, diff := range source {
 			deltas <- delta{
 				w: word,
 				d: diff,
