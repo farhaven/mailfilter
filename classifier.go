@@ -122,7 +122,6 @@ func (c Classifier) Persist(verbose bool) error {
 			return errors.Wrap(err, "getting bucket stats")
 		}
 	}
-	log.Println("persist:", verbose)
 
 	const concurrency = 8
 
@@ -134,7 +133,9 @@ func (c Classifier) Persist(verbose bool) error {
 
 		deltas := make(chan delta)
 		for idx := 0; idx < concurrency; idx++ {
-			log.Println("starting persister", idx)
+			if verbose {
+				log.Println("starting persister", idx)
+			}
 
 			go func() {
 				defer wg.Done()
