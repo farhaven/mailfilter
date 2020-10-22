@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"math"
 	"os"
@@ -54,21 +55,21 @@ func TestClassifier(t *testing.T) {
 		spam        bool
 		expectScore float64
 	}{
-		{"foo", false, 0},
 		{"bar", true, 1},
-		{"foo", false, 0},
 		{"bar", true, 1},
+		{"fnord", false, 1.0 / 3},
+		{"fnord", false, 1.0 / 3},
 		{"fnord", true, 1.0 / 3},
-		{"fnord", false, 1.0 / 3},
-		{"snafu", false, 0},
-		{"fnord", false, 1.0 / 3},
+		{"foo", false, 0},
+		{"foo", false, 0},
+		{"friend", false, 0},
 		{"i", false, 0},
+		{"is", true, 1},
 		{"like", false, 0},
 		{"my", false, 0},
-		{"friend", false, 0},
-		{"this", true, 1},
-		{"is", true, 1},
+		{"snafu", false, 0},
 		{"spam", true, 1},
+		{"this", true, 1},
 	}
 
 	db, err := bolt.Open("words.db", 0600, nil)
@@ -77,10 +78,15 @@ func TestClassifier(t *testing.T) {
 	}
 	defer db.Close()
 
-	c := NewClassifier(db)
+	c := NewClassifier(db, 0.3, 0.7)
 
 	for _, w := range words {
 		c.Train(w.word, w.spam)
+	}
+
+	err = c.Persist(false)
+	if err != nil {
+		t.Fatalf("can't persist trained data: %s", err)
 	}
 
 	// Verify that the recorded spamminess is correct
@@ -92,7 +98,7 @@ func TestClassifier(t *testing.T) {
 
 		s := word.SpamLikelihood()
 		if s != w.expectScore {
-			t.Errorf("expected score %f, got %f for word %d: %v", w.expectScore, s, i, w)
+			t.Errorf("expected score %f, got %f for word %d: %v (db word: %v)", w.expectScore, s, i, w, word)
 		}
 	}
 
@@ -100,33 +106,48 @@ func TestClassifier(t *testing.T) {
 	texts := []struct {
 		txt         string
 		expectScore float64
+		expectLabel string
 	}{
-		{"foo fnord bla", 0},
-		{"asdf yes", 0.5},
-		{"foo bar snafu", 0},
-		{"i like my friend", 0},
-		{"this is spam", 1},
+		{"foo fnord bla", 0, "ham"},
+		{"asdf yes", 0.5, "unsure"},
+		{"foo bar snafu", 0, "ham"},
+		{"i like my friend", 0, "ham"},
+		{"this is spam", 1, "spam"},
 	}
 
 	epsilon := 1e-4
 
 	for i, tc := range texts {
-		s, err := c.SpamLikelihood(tc.txt)
+		s, err := c.Classify(tc.txt)
 		if err != nil {
 			t.Fatalf("unexpected error: %s", err)
 		}
 
-		if s < 0 {
-			t.Fatalf("score too low: %f", s)
+		if s.Score < 0 {
+			t.Fatalf("score too low: %s", s)
 		}
 
-		if s > 1 {
-			t.Fatalf("score too high: %f", s)
+		if s.Score > 1 {
+			t.Fatalf("score too high: %s", s)
 		}
 
-		if math.Abs(s-tc.expectScore) > epsilon {
-			t.Errorf("expected score %f, got %f for text %d: %q", tc.expectScore, s, i, tc.txt)
+		if math.Abs(s.Score-tc.expectScore) > epsilon {
+			t.Errorf("expected score %f, got %f for text %d: %q", tc.expectScore, s.Score, i, tc.txt)
 		}
+
+		if tc.expectLabel != s.Label {
+			t.Errorf("expected label %q, got %q for text %d: %q", tc.expectLabel, s.Label, i, tc.txt)
+		}
+	}
+
+	if t.Failed() {
+		var buf bytes.Buffer
+		err := c.Dump(&buf)
+		if err != nil {
+			t.Errorf("can't dump classifier state: %s", err)
+		}
+
+		t.Logf("classifier state: %s", buf.String())
 	}
 }
 
