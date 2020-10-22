@@ -332,17 +332,34 @@ func (c Classifier) Classify(text io.Reader) (ClassificationResult, error) {
 		scores = append(scores, s)
 	}
 
-	// score = a / (a + b)
-	a := float64(1)
-	b := float64(1)
+	eta := float64(0)
 
-	for _, s := range scores {
-		a *= s
-		b *= (1 - s)
+	for _, p := range scores {
+		l1 := math.Log(1 - p)
+		l2 := math.Log(p)
+
+		if math.IsNaN(l1) || math.IsInf(l1, 0) {
+			panic(fmt.Sprintf("l1: %f", l1))
+		}
+
+		if math.IsNaN(l2) || math.IsInf(l2, 0) {
+			panic(fmt.Sprintf("l2: %f", l2))
+		}
+
+		eta += l1 - l2
+
+		if math.IsNaN(eta) || math.IsInf(eta, 0) {
+			panic(fmt.Sprintf("eta: %f", eta))
+		}
+	}
+
+	score := 1.0 / (1.0 + math.Exp(eta))
+	if math.IsNaN(score) || math.IsInf(score, 0) {
+		panic(fmt.Sprintf("score: %f", score))
 	}
 
 	result := ClassificationResult{
-		Score: a / (a + b),
+		Score: score,
 		Label: "ham",
 	}
 
