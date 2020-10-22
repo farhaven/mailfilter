@@ -80,11 +80,7 @@ of delivery agents and mail filters
 This filter is very very simple and was hacked together as a "I need to
 sit on my couch and relax"-type project. The following caveats apply:
 
-* There is absolutely no normalization done on the text, especially no
-  case folding and no elimination of characters like punctuation or digits
 * Base64 content is not decoded
-* The scoring may encounter floating point underflows if the training set
-  is large
 * There is no garbage collection on the training data
 * There are only three labels: "spam", "unsure" and "ham"
 
