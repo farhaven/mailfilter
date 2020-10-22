@@ -15,10 +15,17 @@ import (
 
 func TestScan(t *testing.T) {
 	testCases := []struct {
-		txt string
+		txt         string
+		expectWords []string
 	}{
-		{txt: "foo, bar asd2123aaa yellow :)  "},
-		{txt: "green GREEN grEEn gr33n"},
+		{
+			txt:         "foo, bar asd2123aaa yellow :)  ",
+			expectWords: []string{"foo", "bar", "asdaaa", "yellow"},
+		},
+		{
+			txt:         "green GREEN grEEn gr33n",
+			expectWords: []string{"green", "green", "green", "grn"},
+		},
 	}
 
 	expr := regexp.MustCompile(`^[\p{Ll}]*$`)
@@ -30,11 +37,24 @@ func TestScan(t *testing.T) {
 			scanner := bufio.NewScanner(buf)
 			scanner.Split(ScanWords)
 
-			for scanner.Scan() {
+			wordIdx := 0
+			for ; scanner.Scan(); wordIdx++ {
 				word := scanner.Text()
 				if !expr.Match([]byte(word)) {
 					t.Errorf("%q does not match %s", word, expr)
 				}
+
+				if len(tc.expectWords) < (wordIdx + 1) {
+					t.Errorf("got unexpected word %q", word)
+				}
+
+				if tc.expectWords[wordIdx] != word {
+					t.Errorf("expected %q at %d, got %q", tc.expectWords[wordIdx], idx, word)
+				}
+			}
+
+			if len(tc.expectWords) != wordIdx {
+				t.Errorf("expected %d words, got %d", len(tc.expectWords), wordIdx)
 			}
 		})
 	}
