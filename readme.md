@@ -56,7 +56,7 @@ The thresholds can be changed by passing appropriate command line parameters.
 If you use maildrop, you can hook up mailfilter by adding a line like this to `~/.mailfilter`:
 
 ```
-xfilter "/home/gbe/go/bin/mailfilter -mode=classify"
+xfilter "/path/to/mailfilter -mode=classify"
 ```
 
 After that, you can use header matches for `X-Mailfilter: label="spam"`
