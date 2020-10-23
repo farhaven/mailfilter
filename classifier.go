@@ -271,7 +271,9 @@ func (c Classifier) Dump(out io.Writer) error {
 				return fmt.Errorf("getting counters for %q: %w", k, err)
 			}
 
-			words = append(words, w)
+			if w.Total > 5 {
+				words = append(words, w)
+			}
 
 			return nil
 		})
