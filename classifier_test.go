@@ -20,19 +20,19 @@ func TestScan(t *testing.T) {
 	}{
 		{
 			txt:         "foo, bar asd2123aaa yellow :)  ",
-			expectWords: []string{"foo", "bar", "asdaaa", "yellow"},
+			expectWords: []string{"foo!", "bar", "asd#aaa", "yellow", "!"},
 		},
 		{
 			txt:         "green GREEN grEEn gr33n",
-			expectWords: []string{"green", "green", "green", "grn"},
+			expectWords: []string{"green", "green", "green", "gr#n"},
 		},
 		{
 			txt:         "foo 123 bar :) asdf",
-			expectWords: []string{"foo", "bar", "asdf"},
+			expectWords: []string{"foo", "#", "bar", "!", "asdf"},
 		},
 	}
 
-	expr := regexp.MustCompile(`^[\p{Ll}]*$`)
+	expr := regexp.MustCompile(`^[\p{Ll}!#]+$`)
 
 	for idx, tc := range testCases {
 		t.Run(strconv.Itoa(idx), func(t *testing.T) {

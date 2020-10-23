@@ -17,6 +17,11 @@ import (
 )
 
 var exprWord = regexp.MustCompile(`[^\p{Ll}\s]*`)
+var (
+	exprPunct = regexp.MustCompile(`[\p{P}\p{S}\p{C}\p{M}]+`)
+	exprNumber = regexp.MustCompile(`[\p{N}]+`)
+	exprSep = regexp.MustCompile(`[\p{Z}]+`)
+)
 
 type FilteredReader struct {
 	r io.Reader
@@ -28,7 +33,11 @@ func (r FilteredReader) Read(data []byte) (int, error) {
 		return 0, err
 	}
 
-	b := exprWord.ReplaceAll(bytes.ToLower(data[:n]), []byte(""))
+	b := bytes.ToLower(data[:n])
+
+	b = exprPunct.ReplaceAll(b, []byte("!"))
+	b = exprNumber.ReplaceAll(b, []byte("#"))
+	b = exprSep.ReplaceAll(b, []byte(" "))
 
 	copy(data, b)
 
