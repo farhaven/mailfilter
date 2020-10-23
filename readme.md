@@ -7,18 +7,22 @@ Here's how to use it:
 ## General usage
 
 ```
-; ./mailfilter -help
+; <./mailfilter -help
 Usage of ./mailfilter:
+  -classify string
+    	How to classify this message. If empty, no classification is done. One of [email, plain] (default "email")
   -dbPath string
     	path to word database (default "/home/gbe/.mailfilter.db")
   -dump
     	dump frequency data to stdout
-  -mode string
-    	What do do with the message. One of [classify, spam, ham]. (default "classify")
+  -profilingAddr string
+    	Listening address for profiling server (default "127.0.0.1:7999")
   -thresholdSpam float
     	Mail with score above this value will be classified as 'spam' (default 0.7)
   -thresholdUnsure float
     	Mail with score above this value will be classified as 'unsure' (default 0.3)
+  -train string
+    	How to train this message. If not provided, no training is done. One of [ham,spam] otherwise
   -verbose
     	be more verbose during training
 ```
@@ -26,14 +30,14 @@ Usage of ./mailfilter:
 ## Train text as ham or spam
 
 ```
-; cat /tmp/spam/*.msg | ./mailfilter -mode=spam
-; cat /tmp/ham/*.msg | ./mailfilter -mode=ham
+; cat /tmp/spam/*.msg | ./mailfilter -train=spam
+; cat /tmp/ham/*.msg | ./mailfilter -train=ham
 ```
 
 ## Classify a message
 
 ```
-; cat /tmp/new/bla.msg | ./mailfilter -mode=classify
+; cat /tmp/new/bla.msg | ./mailfilter -classify=email
 ```
 
 This will write the content of `/tmp/new/bla.msg` to the standard
@@ -56,7 +60,7 @@ The thresholds can be changed by passing appropriate command line parameters.
 If you use maildrop, you can hook up mailfilter by adding a line like this to `~/.mailfilter`:
 
 ```
-xfilter "/path/to/mailfilter -mode=classify"
+xfilter "/path/to/mailfilter -classify=email"
 ```
 
 After that, you can use header matches for `X-Mailfilter: label="spam"`

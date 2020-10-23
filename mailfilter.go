@@ -71,11 +71,17 @@ func train(in io.Reader, c Classifier, spam, verbose bool) error {
 	return nil
 }
 
+type ClassifyMode int
+const (
+	ClassifyEmail ClassifyMode = iota
+	ClassifyPlain
+)
+
 // classify reads a text from in, asks the given classifier to classify
 // it as either spam or ham and writes it to out. The text is assumed to
 // be a single RRC2046-encoded message, and the verdict is added as a
 // header with the name `X-Mailfilter`.
-func classify(in io.Reader, c Classifier, out io.Writer) error {
+func classify(in io.Reader, c Classifier, out io.Writer, how ClassifyMode) error {
 	var (
 		buf bytes.Buffer
 		msg bytes.Buffer
@@ -89,6 +95,16 @@ func classify(in io.Reader, c Classifier, out io.Writer) error {
 	label, err := c.Classify(&buf)
 	if err != nil {
 		return errors.Wrap(err, "classifying")
+	}
+
+	if how == ClassifyPlain {
+		// Just write out the verdict to the output writer
+		_, err := fmt.Fprintln(out, label)
+		if err != nil {
+			return errors.Wrap(err, "writing verdict")
+		}
+
+		return nil
 	}
 
 	// Write back message, inserting X-Mailfilter header at the bottom of the header block
@@ -132,11 +148,14 @@ func main() {
 
 	dump := flag.Bool("dump", false, "dump frequency data to stdout")
 	verbose := flag.Bool("verbose", false, "be more verbose during training")
-	mode := flag.String("mode", "classify", "What do do with the message. One of [classify, spam, ham].")
+	profilingAddr := flag.String("profilingAddr", "127.0.0.1:7999", "Listening address for profiling server")
 	dbPath := flag.String("dbPath", filepath.Join(user.HomeDir, ".mailfilter.db"), "path to word database")
+
+	doTrain := flag.String("train", "", "How to train this message. If not provided, no training is done. One of [ham,spam] otherwise")
+
+	doClassify := flag.String("classify", "email", "How to classify this message. If empty, no classification is done. One of [email, plain]")
 	thresholdUnsure := flag.Float64("thresholdUnsure", 0.3, "Mail with score above this value will be classified as 'unsure'")
 	thresholdSpam := flag.Float64("thresholdSpam", 0.7, "Mail with score above this value will be classified as 'spam'")
-	profilingAddr := flag.String("profilingAddr", "127.0.0.1:7999", "Listening address for profiling server")
 
 	flag.Parse()
 
@@ -152,12 +171,20 @@ func main() {
 		defer profile.Start(profile.ProfilePath("/tmp")).Stop()
 	}
 
-	switch *mode {
-	case "classify", "ham", "spam":
-	default:
-		fmt.Fprintf(flag.CommandLine.Output(), "Unknown mode %q\n\n", *mode)
-		flag.PrintDefaults()
-		os.Exit(1)
+	switch *doTrain {
+		case "", "ham", "spam":
+		default:
+			fmt.Fprintf(flag.CommandLine.Output(), "Don't know how to train %q\n\n", *doTrain)
+			flag.PrintDefaults()
+			os.Exit(1)
+	}
+
+	switch *doClassify {
+		case "", "email", "plain":
+		default:
+			fmt.Fprintf(flag.CommandLine.Output(), "Don't know how to classify %q\n\n", *doClassify)
+			flag.PrintDefaults()
+			os.Exit(1)
 	}
 
 	if *thresholdUnsure >= *thresholdSpam {
@@ -184,14 +211,22 @@ func main() {
 		log.Println("done")
 	}()
 
-	switch *mode {
-	case "ham", "spam":
-		err = train(os.Stdin, c, *mode == "spam", *verbose)
+	if *doTrain != "" {
+		err = train(os.Stdin, c, *doTrain == "spam", *verbose)
 		if err != nil {
-			log.Fatalf("can't train message as %s: %s", *mode, err)
+			log.Fatalf("can't train message as %s: %s", *doTrain, err)
 		}
-	case "classify":
-		err := classify(os.Stdin, c, os.Stdout)
+
+		*doClassify = ""
+	}
+
+	if *doClassify != "" {
+		mode := ClassifyEmail
+		if *doClassify == "plain" {
+			mode = ClassifyPlain
+		}
+
+		err := classify(os.Stdin, c, os.Stdout, mode)
 		if err != nil {
 			log.Fatalf("can't classify message: %s", err)
 		}
