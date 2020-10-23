@@ -30,6 +30,10 @@ func TestScan(t *testing.T) {
 			txt:         "foo 123 bar :) asdf",
 			expectWords: []string{"foo", "#", "bar", "!", "asdf"},
 		},
+		{
+			txt: "averylongwordindeedprobablylongerthansixteencharacters",
+			expectWords: []string{"averylongwordind", "eedprobablylonge", "rthansixteenchar", "acters"},
+		},
 	}
 
 	expr := regexp.MustCompile(`^[\p{Ll}!#]+$`)
@@ -39,7 +43,7 @@ func TestScan(t *testing.T) {
 			buf := bytes.NewBufferString(tc.txt)
 
 			scanner := bufio.NewScanner(FilteredReader{buf})
-			scanner.Split(bufio.ScanWords)
+			scanner.Split(ScanNGram)
 
 			wordIdx := 0
 			for ; scanner.Scan(); wordIdx++ {

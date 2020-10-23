@@ -11,16 +11,50 @@ import (
 	"sort"
 	"strconv"
 	"sync"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/boltdb/bolt"
 	"github.com/pkg/errors"
 )
 
-var exprWord = regexp.MustCompile(`[^\p{Ll}\s]*`)
+func ScanNGram(data []byte, atEOF bool) (advance int, token []byte, err error) {
+	const maxLength = 16
+
+	// Skip leading spaces.
+	start := 0
+	for width := 0; start < len(data); start += width {
+		var r rune
+		r, width = utf8.DecodeRune(data[start:])
+		if !unicode.IsSpace(r) {
+			break
+		}
+	}
+	// Scan until space, marking end of word.
+	for width, i := 0, start; i < len(data); i += width {
+		var r rune
+		r, width = utf8.DecodeRune(data[i:])
+		if unicode.IsSpace(r) {
+			return i + width, data[start:i], nil
+		}
+
+		if i >= maxLength {
+			return i + width - 1, data[start:i], nil
+		}
+	}
+
+	// If we're at EOF, we have a final, non-empty, non-terminated word. Return it.
+	if atEOF && len(data) > start {
+		return len(data), data[start:], nil
+	}
+	// Request more data.
+	return start, nil, nil
+}
+
 var (
-	exprPunct = regexp.MustCompile(`[\p{P}\p{S}\p{C}\p{M}]+`)
+	exprPunct  = regexp.MustCompile(`[\p{P}\p{S}\p{C}\p{M}]+`)
 	exprNumber = regexp.MustCompile(`[\p{N}]+`)
-	exprSep = regexp.MustCompile(`[\p{Z}]+`)
+	exprSep    = regexp.MustCompile(`[\p{Z}]+`)
 )
 
 type FilteredReader struct {
@@ -365,7 +399,7 @@ func (c ClassificationResult) String() string {
 // Classify classifies the given text and returns a label along with a "certainty" value for that label.
 func (c Classifier) Classify(text io.Reader) (ClassificationResult, error) {
 	scanner := bufio.NewScanner(FilteredReader{text})
-	scanner.Split(bufio.ScanWords)
+	scanner.Split(ScanNGram)
 
 	var scores []float64
 	for scanner.Scan() {
