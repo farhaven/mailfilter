@@ -8,6 +8,7 @@ import (
 	"log"
 	"math"
 	"regexp"
+	"sort"
 	"strconv"
 	"sync"
 
@@ -29,6 +30,7 @@ func ScanWords(data []byte, atEOF bool) (advance int, token []byte, err error) {
 }
 
 type Word struct {
+	Text  string
 	Total int
 	Spam  int
 }
@@ -204,6 +206,10 @@ func (c Classifier) Persist(verbose bool) error {
 }
 
 func (c Classifier) Dump(out io.Writer) error {
+	log.Println("starting dump")
+
+	var words []Word
+
 	err := c.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte("total"))
 		if b == nil {
@@ -216,10 +222,7 @@ func (c Classifier) Dump(out io.Writer) error {
 				return fmt.Errorf("getting counters for %q: %w", k, err)
 			}
 
-			_, err = fmt.Fprintf(out, "%s\t%d\t%d\t%f\n", string(k), w.Total, w.Spam, w.SpamLikelihood())
-			if err != nil {
-				return errors.Wrap(err, "writing output line")
-			}
+			words = append(words, w)
 
 			return nil
 		})
@@ -235,11 +238,46 @@ func (c Classifier) Dump(out io.Writer) error {
 		return errors.Wrap(err, "dumping database")
 	}
 
+	// Dump top 25 total words, and top 25 spam words
+	sort.Slice(words, func(i, j int) bool {
+		return words[i].Total > words[j].Total
+	})
+
+	_, err = fmt.Fprintln(out, "Top 25 words:")
+	if err != nil {
+		return errors.Wrap(err, "writing total header")
+	}
+
+	for idx := 0; idx < 25 && idx < len(words)-1; idx++ {
+		_, err = fmt.Fprintln(out, idx, words[idx])
+		if err != nil {
+			return errors.Wrap(err, "writing total entry "+strconv.Itoa(idx))
+		}
+	}
+
+	sort.Slice(words, func(i, j int) bool {
+		return words[i].Spam > words[j].Spam
+	})
+
+	_, err = fmt.Fprintln(out, "Top 25 spam words:")
+	if err != nil {
+		return errors.Wrap(err, "writing spam header")
+	}
+
+	for idx := 0; idx < 25 && idx < len(words)-1; idx++ {
+		_, err = fmt.Fprintln(out, idx, words[idx])
+		if err != nil {
+			return errors.Wrap(err, "writing spam entry "+strconv.Itoa(idx))
+		}
+	}
+
 	return nil
 }
 
 func (c Classifier) getWord(word string) (Word, error) {
-	var w Word
+	w := Word{
+		Text: word,
+	}
 
 	err := c.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte("total"))
@@ -312,7 +350,7 @@ func (c ClassificationResult) String() string {
 // Classify classifies the given text and returns a label along with a "certainty" value for that label.
 func (c Classifier) Classify(text io.Reader) (ClassificationResult, error) {
 	scanner := bufio.NewScanner(text)
-	scanner.Split(bufio.ScanWords)
+	scanner.Split(ScanWords)
 
 	var scores []float64
 	for scanner.Scan() {
