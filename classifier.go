@@ -16,17 +16,23 @@ import (
 	"github.com/pkg/errors"
 )
 
-var exprWord = regexp.MustCompile(`[^\p{Ll}]*`)
+var exprWord = regexp.MustCompile(`[^\p{Ll}\s]*`)
 
-func ScanWords(data []byte, atEOF bool) (advance int, token []byte, err error) {
-	a, t, err := bufio.ScanWords(data, atEOF)
+type FilteredReader struct {
+	r io.Reader
+}
+
+func (r FilteredReader) Read(data []byte) (int, error) {
+	n, err := r.r.Read(data)
 	if err != nil {
-		return 0, nil, err
+		return 0, err
 	}
 
-	t = exprWord.ReplaceAll(bytes.ToLower(t), nil)
+	b := exprWord.ReplaceAll(bytes.ToLower(data[:n]), []byte(""))
 
-	return a, t, nil
+	copy(data, b)
+
+	return len(b), nil
 }
 
 type Word struct {
@@ -349,8 +355,8 @@ func (c ClassificationResult) String() string {
 
 // Classify classifies the given text and returns a label along with a "certainty" value for that label.
 func (c Classifier) Classify(text io.Reader) (ClassificationResult, error) {
-	scanner := bufio.NewScanner(text)
-	scanner.Split(ScanWords)
+	scanner := bufio.NewScanner(FilteredReader{text})
+	scanner.Split(bufio.ScanWords)
 
 	var scores []float64
 	for scanner.Scan() {

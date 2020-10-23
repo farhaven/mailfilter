@@ -26,6 +26,10 @@ func TestScan(t *testing.T) {
 			txt:         "green GREEN grEEn gr33n",
 			expectWords: []string{"green", "green", "green", "grn"},
 		},
+		{
+			txt:         "foo 123 bar :) asdf",
+			expectWords: []string{"foo", "bar", "asdf"},
+		},
 	}
 
 	expr := regexp.MustCompile(`^[\p{Ll}]*$`)
@@ -34,12 +38,14 @@ func TestScan(t *testing.T) {
 		t.Run(strconv.Itoa(idx), func(t *testing.T) {
 			buf := bytes.NewBufferString(tc.txt)
 
-			scanner := bufio.NewScanner(buf)
-			scanner.Split(ScanWords)
+			scanner := bufio.NewScanner(FilteredReader{buf})
+			scanner.Split(bufio.ScanWords)
 
 			wordIdx := 0
 			for ; scanner.Scan(); wordIdx++ {
 				word := scanner.Text()
+				t.Logf("got word: %s", word)
+
 				if !expr.Match([]byte(word)) {
 					t.Errorf("%q does not match %s", word, expr)
 				}
@@ -48,7 +54,7 @@ func TestScan(t *testing.T) {
 					t.Errorf("got unexpected word %q", word)
 				}
 
-				if tc.expectWords[wordIdx] != word {
+				if len(tc.expectWords) > wordIdx && tc.expectWords[wordIdx] != word {
 					t.Errorf("expected %q at %d, got %q", tc.expectWords[wordIdx], idx, word)
 				}
 			}

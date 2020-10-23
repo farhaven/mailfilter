@@ -54,8 +54,8 @@ func writeMessage(msg *mail.Message, out io.Writer) (io.Reader, error) {
 // train reads text from in and trains the given classifier to recognize
 // the text as ham or spam, depending on the spam flag.
 func train(in io.Reader, c Classifier, spam, verbose bool) error {
-	scanner := bufio.NewScanner(in)
-	scanner.Split(ScanWords)
+	scanner := bufio.NewScanner(FilteredReader{in})
+	scanner.Split(bufio.ScanWords)
 
 	words := 0
 	for scanner.Scan() {
