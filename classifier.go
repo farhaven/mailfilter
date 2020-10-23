@@ -306,7 +306,7 @@ type ClassificationResult struct {
 }
 
 func (c ClassificationResult) String() string {
-	return fmt.Sprintf("label=%q, score=%.4f", c.Label, c.Score)
+	return fmt.Sprintf("label=%q, score=%.6f", c.Label, c.Score)
 }
 
 // Classify classifies the given text and returns a label along with a "certainty" value for that label.
