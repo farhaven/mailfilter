@@ -311,9 +311,6 @@ func (c ClassificationResult) String() string {
 
 // Classify classifies the given text and returns a label along with a "certainty" value for that label.
 func (c Classifier) Classify(text io.Reader) (ClassificationResult, error) {
-	// TODO: This doesn't deal with float underflows. That's probably not good.
-	//       Calculating this stuff in the log-domain doesn't seem to work though,
-	//       or I'm too stupid. That seems more likely.
 	scanner := bufio.NewScanner(text)
 	scanner.Split(bufio.ScanWords)
 
