@@ -72,6 +72,7 @@ func train(in io.Reader, c Classifier, spam, verbose bool) error {
 }
 
 type ClassifyMode int
+
 const (
 	ClassifyEmail ClassifyMode = iota
 	ClassifyPlain
@@ -172,19 +173,19 @@ func main() {
 	}
 
 	switch *doTrain {
-		case "", "ham", "spam":
-		default:
-			fmt.Fprintf(flag.CommandLine.Output(), "Don't know how to train %q\n\n", *doTrain)
-			flag.PrintDefaults()
-			os.Exit(1)
+	case "", "ham", "spam":
+	default:
+		fmt.Fprintf(flag.CommandLine.Output(), "Don't know how to train %q\n\n", *doTrain)
+		flag.PrintDefaults()
+		os.Exit(1)
 	}
 
 	switch *doClassify {
-		case "", "email", "plain":
-		default:
-			fmt.Fprintf(flag.CommandLine.Output(), "Don't know how to classify %q\n\n", *doClassify)
-			flag.PrintDefaults()
-			os.Exit(1)
+	case "", "email", "plain":
+	default:
+		fmt.Fprintf(flag.CommandLine.Output(), "Don't know how to classify %q\n\n", *doClassify)
+		flag.PrintDefaults()
+		os.Exit(1)
 	}
 
 	if *thresholdUnsure >= *thresholdSpam {
@@ -202,16 +203,17 @@ func main() {
 	log.Println("database open")
 
 	c := NewClassifier(db, *thresholdUnsure, *thresholdSpam)
-	defer func() {
-		err := c.Persist(*verbose)
-		if err != nil {
-			log.Panicf("can't persist db: %s", err)
-		}
-
-		log.Println("done")
-	}()
 
 	if *doTrain != "" {
+		defer func() {
+			err := c.Persist(*verbose)
+			if err != nil {
+				log.Panicf("can't persist db: %s", err)
+			}
+
+			log.Println("done")
+		}()
+
 		err = train(os.Stdin, c, *doTrain == "spam", *verbose)
 		if err != nil {
 			log.Fatalf("can't train message as %s: %s", *doTrain, err)
