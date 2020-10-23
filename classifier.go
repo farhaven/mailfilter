@@ -271,7 +271,7 @@ func (c Classifier) Dump(out io.Writer) error {
 	}
 
 	sort.Slice(words, func(i, j int) bool {
-		return words[i].Spam > words[j].Spam
+		return words[i].SpamLikelihood() > words[j].SpamLikelihood()
 	})
 
 	_, err = fmt.Fprintln(out, "Top 25 spam words:")
