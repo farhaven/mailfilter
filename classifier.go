@@ -103,6 +103,10 @@ func (w Word) SpamLikelihood() float64 {
 	return score
 }
 
+func (w Word) String() string {
+	return fmt.Sprintf("{%s %d %d -> %.3f}", w.Text, w.Total, w.Spam, w.SpamLikelihood())
+}
+
 type Classifier struct {
 	db *bolt.DB
 
@@ -307,7 +311,10 @@ func (c Classifier) Dump(out io.Writer) error {
 	}
 
 	sort.Slice(words, func(i, j int) bool {
-		return words[i].SpamLikelihood() > words[j].SpamLikelihood()
+		s1 := words[i].SpamLikelihood() * float64(words[i].Total)
+		s2 := words[j].SpamLikelihood() * float64(words[j].Total)
+
+		return s1 > s2
 	})
 
 	_, err = fmt.Fprintln(out, "Top 25 spam words:")
