@@ -7,7 +7,6 @@ import (
 	"io"
 	"log"
 	"math"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -52,12 +51,6 @@ func ScanNGram(data []byte, atEOF bool) (advance int, token []byte, err error) {
 	// Request more data.
 	return start, nil, nil
 }
-
-var (
-	exprPunct  = regexp.MustCompile(`[\p{P}\p{S}\p{C}\p{M}]+`)
-	exprNumber = regexp.MustCompile(`[\p{N}]+`)
-	exprSep    = regexp.MustCompile(`[\p{Z}]+`)
-)
 
 type FilteredReader struct {
 	r io.Reader
