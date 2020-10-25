@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/boltdb/bolt"
+	"github.com/dgraph-io/badger/v2"
 )
 
 func TestScan(t *testing.T) {
@@ -31,7 +31,7 @@ func TestScan(t *testing.T) {
 			expectWords: []string{"foo", "#", "bar", "!", "asdf"},
 		},
 		{
-			txt: "averylongwordindeedprobablylongerthansixteencharacters",
+			txt:         "averylongwordindeedprobablylongerthansixteencharacters",
 			expectWords: []string{"averylongwordind", "eedprobablylonge", "rthansixteenchar", "acters"},
 		},
 	}
@@ -132,7 +132,7 @@ func TestClassifier(t *testing.T) {
 		{"this", true, 1},
 	}
 
-	db, err := bolt.Open("words.db", 0600, nil)
+	db, err := badger.Open(badger.DefaultOptions("words.db"))
 	if err != nil {
 		t.Fatalf("can't open db file: %s", err)
 	}
@@ -144,7 +144,7 @@ func TestClassifier(t *testing.T) {
 		c.Train(w.word, w.spam)
 	}
 
-	err = c.Persist(false)
+	err = c.Persist(true)
 	if err != nil {
 		t.Fatalf("can't persist trained data: %s", err)
 	}
@@ -238,6 +238,10 @@ func TestSigmoid(t *testing.T) {
 }
 
 func TestMain(m *testing.M) {
-	os.Remove("words.db")
+	err := os.RemoveAll("words.db")
+	if err != nil {
+		panic(err)
+	}
+
 	os.Exit(m.Run())
 }

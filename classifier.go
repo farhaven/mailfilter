@@ -10,11 +10,12 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/boltdb/bolt"
+	"github.com/dgraph-io/badger/v2"
 	"github.com/pkg/errors"
 )
 
@@ -30,6 +31,7 @@ func ScanNGram(data []byte, atEOF bool) (advance int, token []byte, err error) {
 			break
 		}
 	}
+
 	// Scan until space, marking end of word.
 	for width, i := 0, start; i < len(data); i += width {
 		var r rune
@@ -67,15 +69,81 @@ func (r FilteredReader) Read(data []byte) (int, error) {
 		return 0, err
 	}
 
-	b := bytes.ToLower(data[:n])
+	lowercase := bytes.ToLower(data[:n])
 
-	b = exprPunct.ReplaceAll(b, []byte("!"))
-	b = exprNumber.ReplaceAll(b, []byte("#"))
-	b = exprSep.ReplaceAll(b, []byte(" "))
+	writeIdx := 0
 
-	copy(data, b)
+	inPunct := false
+	inNumber := false
+	inSep := false
+	inErr := false
 
-	return len(b), nil
+	for len(lowercase) > 0 {
+		r, sz := utf8.DecodeRune(lowercase)
+		if r == utf8.RuneError {
+			sz = 1 // Force skip
+		}
+		lowercase = lowercase[sz:]
+
+		switch {
+		case r == utf8.RuneError:
+			if inErr {
+				// Already inside a non-utf8 sequence
+				continue
+			}
+
+			data[writeIdx] = '*'
+			writeIdx++
+			inErr = true
+			inNumber = false
+			inPunct = false
+			inSep = false
+		case unicode.IsPunct(r):
+			if inPunct {
+				// Already inside a sequence of punctuation
+				continue
+			}
+
+			data[writeIdx] = '!'
+			writeIdx++
+			inErr = false
+			inNumber = false
+			inPunct = true
+			inSep = false
+		case unicode.IsNumber(r):
+			if inNumber {
+				continue
+			}
+
+			data[writeIdx] = '#'
+			writeIdx++
+			inErr = false
+			inNumber = true
+			inPunct = false
+			inSep = false
+		case unicode.IsSpace(r):
+			if inSep {
+				continue
+			}
+
+			data[writeIdx] = ' '
+			writeIdx++
+			inErr = false
+			inNumber = false
+			inPunct = false
+			inSep = true
+		default:
+			// Encode rune into output slice
+			// NB: Since we use a copy of data as the input, there should (tm) always be enough space in the remainder of data to encode the rune.
+			writeIdx += utf8.EncodeRune(data[writeIdx:], r)
+			inErr = false
+			inNumber = false
+			inPunct = false
+			inSep = false
+		}
+	}
+
+	return writeIdx, nil
 }
 
 type Word struct {
@@ -108,7 +176,7 @@ func (w Word) String() string {
 }
 
 type Classifier struct {
-	db *bolt.DB
+	db *badger.DB
 
 	spam  map[string]int // used during training, persisted in Close
 	total map[string]int // see above
@@ -117,7 +185,7 @@ type Classifier struct {
 	thresholdSpam   float64
 }
 
-func NewClassifier(db *bolt.DB, thresholdUnsure, thresholdSpam float64) Classifier {
+func NewClassifier(db *badger.DB, thresholdUnsure, thresholdSpam float64) Classifier {
 	return Classifier{
 		db: db,
 
@@ -134,65 +202,74 @@ type delta struct {
 	d int
 }
 
-func (c Classifier) persistDelta(bucketName string, deltas chan delta) error {
-	err := c.db.Update(func(tx *bolt.Tx) error {
-		for delta := range deltas {
-			bucket, err := tx.CreateBucketIfNotExists([]byte(bucketName))
-			if err != nil {
-				return fmt.Errorf("getting %q bucket: %w", bucketName, err)
-			}
-
-			word := []byte(delta.w)
-
-			var v int
-
-			d := bucket.Get(word)
-			if len(d) != 0 {
-				v, err = strconv.Atoi(string(d))
-				if err != nil {
-					return errors.Wrap(err, "parsing total")
-				}
-			}
-
-			err = bucket.Put(word, []byte(strconv.Itoa(v+delta.d)))
-			if err != nil {
-				return errors.Wrap(err, "writing total value")
-			}
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		return errors.Wrap(err, "persisting delta")
+func (c Classifier) persistDelta(label string, deltas chan delta) error {
+	switch label {
+	case "total", "spam":
+	default:
+		return errors.New("unexpected label: " + label)
 	}
 
-	return nil
-}
-
-func (c Classifier) Persist(verbose bool) error {
-	if verbose {
-		log.Println("persisting updated training data", len(c.spam), len(c.total))
-
-		err := c.db.View(func(tx *bolt.Tx) error {
-			totalBucket := tx.Bucket([]byte("total"))
-			if totalBucket != nil {
-				log.Printf("> Total bucket: %#v", totalBucket.Stats())
+	// Loop: collect a bunch of deltas, persist them at once
+	for first := range deltas {
+		// Collect a bunch more
+		delta := []delta{first}
+		for len(delta) < 200 {
+			d, ok := <-deltas
+			if !ok {
+				// channel closed, finish remaining work
+				break
 			}
 
-			spamBucket := tx.Bucket([]byte("spam"))
-			if spamBucket != nil {
-				log.Printf("> Spam bucket:  %#v", spamBucket.Stats())
+			delta = append(delta, d)
+		}
+
+		err := c.db.Update(func(tx *badger.Txn) (err error) {
+			for _, delta := range delta {
+				log.Printf("label: %q delta: %#v", label, delta)
+
+				key := []byte(label + "-" + delta.w)
+
+				var v int
+
+				current, err := tx.Get(key)
+				switch err {
+				case badger.ErrKeyNotFound:
+					// Do nothing, assume current value is 0
+				case nil:
+					// Parse current value into v
+					err := current.Value(func(d []byte) error {
+						var err error
+						v, err = strconv.Atoi(string(d))
+						if err != nil {
+							return errors.Wrap(err, "can't parse current value")
+						}
+						return nil
+					})
+					if err != nil {
+						return err
+					}
+				default:
+					return fmt.Errorf("getting current value for %q: %w", key, err)
+				}
+
+				err = tx.Set(key, []byte(strconv.Itoa(v+1)))
+				if err != nil {
+					return errors.Wrap(err, "updating value")
+				}
 			}
 
 			return nil
 		})
 
 		if err != nil {
-			return errors.Wrap(err, "getting bucket stats")
+			panic(err)
 		}
 	}
 
+	return nil
+}
+
+func (c Classifier) Persist(verbose bool) error {
 	const concurrency = 8
 
 	for _, label := range []string{"total", "spam"} {
@@ -234,26 +311,6 @@ func (c Classifier) Persist(verbose bool) error {
 		wg.Wait()
 	}
 
-	if verbose {
-		err := c.db.View(func(tx *bolt.Tx) error {
-			totalBucket := tx.Bucket([]byte("total"))
-			if totalBucket != nil {
-				log.Printf("< Total bucket: %#v", totalBucket.Stats())
-			}
-
-			spamBucket := tx.Bucket([]byte("spam"))
-			if spamBucket != nil {
-				log.Printf("< Spam bucket:  %#v", spamBucket.Stats())
-			}
-
-			return nil
-		})
-
-		if err != nil {
-			return errors.Wrap(err, "getting bucket stats")
-		}
-	}
-
 	return nil
 
 }
@@ -263,27 +320,24 @@ func (c Classifier) Dump(out io.Writer) error {
 
 	var words []Word
 
-	err := c.db.View(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte("total"))
-		if b == nil {
-			return nil
-		}
+	err := c.db.View(func(tx *badger.Txn) error {
+		it := tx.NewKeyIterator([]byte("total-"), badger.IteratorOptions{})
+		defer it.Close()
 
-		err := b.ForEach(func(k, v []byte) error {
-			w, err := c.getWord(string(k))
+		for it.Valid() {
+			item := it.Item()
+
+			word := strings.SplitN(string(item.Key()), "-", 2)[1]
+			w, err := c.getWord(word)
 			if err != nil {
-				return fmt.Errorf("getting counters for %q: %w", k, err)
+				return fmt.Errorf("getting counters for %q: %w", word, err)
 			}
 
 			if w.Total > 5 {
 				words = append(words, w)
 			}
 
-			return nil
-		})
-
-		if err != nil {
-			return errors.Wrap(err, "iterating over 'total' bucket")
+			it.Next()
 		}
 
 		return nil
@@ -337,34 +391,47 @@ func (c Classifier) getWord(word string) (Word, error) {
 		Text: word,
 	}
 
-	err := c.db.View(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte("total"))
-		if b == nil {
-			return nil
+	err := c.db.View(func(tx *badger.Txn) error {
+		total, err := tx.Get([]byte("total-" + word))
+		switch err {
+		case badger.ErrKeyNotFound:
+		case nil:
+			err = total.Value(func(v []byte) error {
+				w.Total, err = strconv.Atoi(string(v))
+				if err != nil {
+					return errors.Wrap(err, "parsing total")
+				}
+
+				return nil
+			})
+
+			if err != nil {
+				return errors.Wrap(err, "reading total")
+			}
+		default:
+			return fmt.Errorf("getting total item for %q: %w", word, err)
 		}
 
-		d := b.Get([]byte(word))
-		if len(d) == 0 {
-			return nil
-		}
+		spam, err := tx.Get([]byte("spam-" + word))
+		switch err {
+		case badger.ErrKeyNotFound:
+		case nil:
+			err = spam.Value(func(v []byte) error {
+				w.Spam, err = strconv.Atoi(string(v))
+				if err != nil {
+					return errors.Wrap(err, "parsing spam")
+				}
 
-		var err error
-		w.Total, err = strconv.Atoi(string(d))
-		if err != nil {
-			return errors.Wrap(err, "reading total")
-		}
+				return nil
 
-		b = tx.Bucket([]byte("spam"))
-		if b == nil {
-			return nil
-		}
+			})
 
-		d = b.Get([]byte(word))
-		if len(d) == 0 {
-			return nil
+			if err != nil {
+				return errors.Wrap(err, "reading spam")
+			}
+		default:
+			return fmt.Errorf("getting spam item for %q: %w", word, err)
 		}
-
-		w.Spam, err = strconv.Atoi(string(d))
 
 		return nil
 	})

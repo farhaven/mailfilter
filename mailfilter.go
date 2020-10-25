@@ -20,9 +20,10 @@ import (
 	"os/user"
 	"path/filepath"
 
-	"github.com/boltdb/bolt"
 	"github.com/pkg/errors"
 	"github.com/pkg/profile"
+
+	badger "github.com/dgraph-io/badger/v2"
 )
 
 // writeMessage writes msg to out and returns a copy of out's body
@@ -194,7 +195,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	db, err := bolt.Open(*dbPath, 0600, &bolt.Options{})
+	db, err := badger.Open(badger.DefaultOptions(*dbPath))
 	if err != nil {
 		log.Fatalf("can't open database: %s", err)
 	}
