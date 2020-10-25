@@ -79,9 +79,9 @@ func (r FilteredReader) Read(data []byte) (int, error) {
 		lowercase = lowercase[sz:]
 
 		switch {
-		case r == utf8.RuneError:
+		case r == utf8.RuneError || unicode.IsControl(r):
 			if inErr {
-				// Already inside a non-utf8 sequence
+				// Already inside a non-utf8 or control sequence
 				continue
 			}
 
@@ -91,7 +91,7 @@ func (r FilteredReader) Read(data []byte) (int, error) {
 			inNumber = false
 			inPunct = false
 			inSep = false
-		case unicode.IsPunct(r):
+		case unicode.IsPunct(r) || unicode.IsSymbol(r) || unicode.IsMark(r):
 			if inPunct {
 				// Already inside a sequence of punctuation
 				continue
