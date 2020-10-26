@@ -206,7 +206,7 @@ func (c Classifier) persistDelta(label string, deltas chan delta) error {
 	for first := range deltas {
 		// Collect a bunch more
 		delta := []delta{first}
-		for len(delta) < 200 {
+		for len(delta) < 1024 {
 			d, ok := <-deltas
 			if !ok {
 				// channel closed, finish remaining work
