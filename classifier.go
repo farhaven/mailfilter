@@ -218,8 +218,6 @@ func (c Classifier) persistDelta(label string, deltas chan delta) error {
 
 		err := c.db.Update(func(tx *badger.Txn) (err error) {
 			for _, delta := range delta {
-				log.Printf("label: %q delta: %#v", label, delta)
-
 				key := []byte(label + "-" + delta.w)
 
 				var v int
