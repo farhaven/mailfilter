@@ -19,6 +19,8 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"syscall"
+	"time"
 
 	"github.com/pkg/errors"
 	"github.com/pkg/profile"
@@ -195,9 +197,22 @@ func main() {
 		os.Exit(1)
 	}
 
-	db, err := badger.Open(badger.DefaultOptions(*dbPath))
-	if err != nil {
-		log.Fatalf("can't open database: %s", err)
+	var db *badger.DB
+
+	for {
+		db, err = badger.Open(badger.DefaultOptions(*dbPath))
+		if err != nil {
+			// Check if this is a temporary error, for example because of a lock timeout
+			var syserr syscall.Errno
+			if errors.As(err, &syserr) && syserr.Temporary() {
+				log.Printf("got temporary error %s, waiting 1s before retrying", syserr)
+				time.Sleep(1 * time.Second)
+				continue
+			}
+
+			log.Fatalf("can't open database: %s", err)
+		}
+		break
 	}
 	defer db.Close()
 
