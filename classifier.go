@@ -302,7 +302,8 @@ func (c Classifier) Persist(verbose bool) error {
 		wg.Wait()
 	}
 
-	// Garbage collect DB]
+	// Garbage collect DB
+	cycles := 0
 GC:
 	for {
 		err := c.db.RunValueLogGC(0.7)
@@ -310,10 +311,13 @@ GC:
 		case badger.ErrNoRewrite:
 			break GC
 		case nil:
+			cycles++
 		default:
 			return errors.Wrap(err, "running db gc")
 		}
 	}
+
+	log.Println("ran", cycles, "complete GC cycles")
 
 	return nil
 
