@@ -302,6 +302,19 @@ func (c Classifier) Persist(verbose bool) error {
 		wg.Wait()
 	}
 
+	// Garbage collect DB]
+GC:
+	for {
+		err := c.db.RunValueLogGC(0.7)
+		switch err {
+		case badger.ErrNoRewrite:
+			break GC
+		case nil:
+		default:
+			return errors.Wrap(err, "running db gc")
+		}
+	}
+
 	return nil
 
 }
