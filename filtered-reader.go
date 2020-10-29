@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"io"
+	"strconv"
 	"unicode"
 	"unicode/utf8"
 )
@@ -17,6 +18,23 @@ const (
 	StateError
 )
 
+func (fs FilteredReaderState) String() string {
+	switch fs {
+	case StateNormal:
+		return "Normal"
+	case StatePunct:
+		return "Punctuation"
+	case StateNumber:
+		return "Number"
+	case StateSeparator:
+		return "Separator"
+	case StateError:
+		return "Error"
+	default:
+		panic("unexpected state: " + strconv.Itoa(int(fs)))
+	}
+}
+
 type FilteredReader struct {
 	r io.Reader
 	s FilteredReaderState
@@ -30,7 +48,7 @@ func NewFilteredReader(r io.Reader) *FilteredReader {
 }
 
 func (fr *FilteredReader) step(next FilteredReaderState) bool {
-	rv := fr.s != next
+	rv := fr.s == next
 	fr.s = next
 	return rv
 }
@@ -74,7 +92,7 @@ func (fr *FilteredReader) Read(data []byte) (int, error) {
 
 			data[writeIdx] = '#'
 		case unicode.IsSpace(r):
-			if fr.step(StateNumber) {
+			if fr.step(StateSeparator) {
 				continue
 			}
 

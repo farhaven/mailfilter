@@ -155,12 +155,13 @@ func (c Classifier) persistDelta(label string, deltas chan delta) error {
 					return fmt.Errorf("getting current value for %q: %w", key, err)
 				}
 
+				v += delta.d
 				// clamp value to 0 so things don't get weird
 				if v < 0 {
 					v = 0
 				}
 
-				err = tx.Set(key, []byte(strconv.Itoa(v+1)))
+				err = tx.Set(key, []byte(strconv.Itoa(v)))
 				if err != nil {
 					return errors.Wrap(err, "updating value")
 				}
@@ -186,10 +187,6 @@ func (c Classifier) Persist(verbose bool) error {
 
 		deltas := make(chan delta)
 		for idx := 0; idx < concurrency; idx++ {
-			if verbose {
-				log.Println("starting persister", idx)
-			}
-
 			go func() {
 				defer wg.Done()
 				err := c.persistDelta(label, deltas)
@@ -204,10 +201,6 @@ func (c Classifier) Persist(verbose bool) error {
 			source = c.spam
 		}
 
-		if verbose {
-			log.Println("label", label, "with", len(source), "delta entries")
-		}
-
 		for word, diff := range source {
 			deltas <- delta{
 				w: word,
@@ -217,6 +210,11 @@ func (c Classifier) Persist(verbose bool) error {
 
 		close(deltas)
 		wg.Wait()
+	}
+
+	err := c.db.Sync()
+	if err != nil {
+		return errors.Wrap(err, "syncing db")
 	}
 
 	// Garbage collect DB
@@ -235,6 +233,23 @@ GC:
 	}
 
 	log.Println("ran", cycles, "complete GC cycles")
+
+	err = c.db.View(func(tx *badger.Txn) error {
+		it := tx.NewKeyIterator([]byte(""), badger.IteratorOptions{})
+		defer it.Close()
+
+		for it.Valid() {
+			item := it.Item()
+			log.Printf("item: %#v", item)
+			it.Next()
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		panic(err)
+	}
 
 	return nil
 
@@ -421,6 +436,8 @@ func (c Classifier) Classify(text io.Reader) (ClassificationResult, error) {
 
 		scores = append(scores, s)
 	}
+
+	log.Printf("scores: %#v", scores)
 
 	eta := float64(0)
 
