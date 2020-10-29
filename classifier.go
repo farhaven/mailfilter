@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"fmt"
 	"io"
 	"log"
@@ -50,93 +49,6 @@ func ScanNGram(data []byte, atEOF bool) (advance int, token []byte, err error) {
 	}
 	// Request more data.
 	return start, nil, nil
-}
-
-type FilteredReader struct {
-	r io.Reader
-}
-
-func (r FilteredReader) Read(data []byte) (int, error) {
-	n, err := r.r.Read(data)
-	if err != nil {
-		return 0, err
-	}
-
-	lowercase := bytes.ToLower(data[:n])
-
-	writeIdx := 0
-
-	inPunct := false
-	inNumber := false
-	inSep := false
-	inErr := false
-
-	for len(lowercase) > 0 {
-		r, sz := utf8.DecodeRune(lowercase)
-		if r == utf8.RuneError {
-			sz = 1 // Force skip
-		}
-		lowercase = lowercase[sz:]
-
-		switch {
-		case r == utf8.RuneError || unicode.IsControl(r):
-			if inErr {
-				// Already inside a non-utf8 or control sequence
-				continue
-			}
-
-			data[writeIdx] = '*'
-			writeIdx++
-			inErr = true
-			inNumber = false
-			inPunct = false
-			inSep = false
-		case unicode.IsPunct(r) || unicode.IsSymbol(r) || unicode.IsMark(r):
-			if inPunct {
-				// Already inside a sequence of punctuation
-				continue
-			}
-
-			data[writeIdx] = '!'
-			writeIdx++
-			inErr = false
-			inNumber = false
-			inPunct = true
-			inSep = false
-		case unicode.IsNumber(r):
-			if inNumber {
-				continue
-			}
-
-			data[writeIdx] = '#'
-			writeIdx++
-			inErr = false
-			inNumber = true
-			inPunct = false
-			inSep = false
-		case unicode.IsSpace(r):
-			if inSep {
-				continue
-			}
-
-			data[writeIdx] = ' '
-			writeIdx++
-			inErr = false
-			inNumber = false
-			inPunct = false
-			inSep = true
-		default:
-			// Encode rune into output slice
-			// NB: Since we use a copy of data as the input, there should (tm) always be enough space in the remainder of data to encode the rune.
-			writeIdx += utf8.EncodeRune(data[writeIdx:], r)
-			inErr = false
-			inNumber = false
-			inPunct = false
-			inSep = false
-		}
-	}
-
-	return writeIdx, nil
 }
 
 type Word struct {
@@ -489,7 +401,7 @@ func (c ClassificationResult) String() string {
 
 // Classify classifies the given text and returns a label along with a "certainty" value for that label.
 func (c Classifier) Classify(text io.Reader) (ClassificationResult, error) {
-	scanner := bufio.NewScanner(FilteredReader{text})
+	scanner := bufio.NewScanner(NewFilteredReader(text))
 	scanner.Split(ScanNGram)
 
 	var scores []float64

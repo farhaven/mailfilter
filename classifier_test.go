@@ -42,7 +42,7 @@ func TestScan(t *testing.T) {
 		t.Run(strconv.Itoa(idx), func(t *testing.T) {
 			buf := bytes.NewBufferString(tc.txt)
 
-			scanner := bufio.NewScanner(FilteredReader{buf})
+			scanner := bufio.NewScanner(NewFilteredReader(buf))
 			scanner.Split(ScanNGram)
 
 			wordIdx := 0
