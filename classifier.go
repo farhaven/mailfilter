@@ -437,8 +437,6 @@ func (c Classifier) Classify(text io.Reader) (ClassificationResult, error) {
 		scores = append(scores, s)
 	}
 
-	log.Printf("scores: %#v", scores)
-
 	eta := float64(0)
 
 	for _, p := range scores {
