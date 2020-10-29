@@ -243,6 +243,11 @@ func (c Classifier) persistDelta(label string, deltas chan delta) error {
 					return fmt.Errorf("getting current value for %q: %w", key, err)
 				}
 
+				// clamp value to 0 so things don't get weird
+				if v < 0 {
+					v = 0
+				}
+
 				err = tx.Set(key, []byte(strconv.Itoa(v+1)))
 				if err != nil {
 					return errors.Wrap(err, "updating value")
@@ -456,6 +461,8 @@ func (c Classifier) Train(word string, spam bool) {
 	c.total[word]++
 	if spam {
 		c.spam[word]++
+	} else {
+		c.spam[word]--
 	}
 }
 
