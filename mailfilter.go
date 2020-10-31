@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -140,6 +141,9 @@ func classify(in io.Reader, c Classifier, out io.Writer, how ClassifyMode) error
 }
 
 func main() {
+	runtime.SetBlockProfileRate(20)
+	runtime.SetMutexProfileFraction(20)
+
 	user, err := user.Current()
 	if err != nil {
 		log.Fatalf("can't get current user: %s", err)
@@ -196,11 +200,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	opts := nutsdb.DefaultOptions
+	opts.Dir = *dbPath
+	opts.RWMode = nutsdb.MMap
+	opts.SyncEnable = false
+
 	var db *nutsdb.DB
 
 	for {
-		opts := nutsdb.DefaultOptions
-		opts.Dir = *dbPath
 		db, err = nutsdb.Open(opts)
 		if err != nil {
 			// Check if this is a temporary error, for example because of a lock timeout
