@@ -384,12 +384,12 @@ func (c Classifier) getWord(word string) (Word, error) {
 }
 
 // Train classifies the given word as spam or not spam, training c for future recognition.
-func (c Classifier) Train(word string, spam bool) {
-	c.total[word]++
+func (c Classifier) Train(word string, spam bool, factor int) {
+	c.total[word] += factor
 	if spam {
-		c.spam[word]++
+		c.spam[word] += factor
 	} else {
-		c.spam[word]--
+		c.spam[word] += factor
 	}
 }
 

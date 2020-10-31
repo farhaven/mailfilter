@@ -56,14 +56,14 @@ func writeMessage(msg *mail.Message, out io.Writer) (io.Reader, error) {
 
 // train reads text from in and trains the given classifier to recognize
 // the text as ham or spam, depending on the spam flag.
-func train(in io.Reader, c Classifier, spam, verbose bool) error {
+func train(in io.Reader, c Classifier, spam bool, learnFactor int, verbose bool) error {
 	scanner := bufio.NewScanner(NewFilteredReader(in))
 	scanner.Split(ScanNGram)
 
 	words := 0
 	for scanner.Scan() {
 		word := scanner.Text()
-		c.Train(word, spam)
+		c.Train(word, spam, learnFactor)
 		words++
 	}
 
@@ -156,6 +156,7 @@ func main() {
 	dbPath := flag.String("dbPath", filepath.Join(user.HomeDir, ".mailfilter.db"), "path to word database")
 
 	doTrain := flag.String("train", "", "How to train this message. If not provided, no training is done. One of [ham,spam] otherwise")
+	learnFactor := flag.Int("learnFactor", 1, "How 'hard' to learn the message")
 
 	doClassify := flag.String("classify", "email", "How to classify this message. If empty, no classification is done. One of [email, plain]")
 	thresholdUnsure := flag.Float64("thresholdUnsure", 0.3, "Mail with score above this value will be classified as 'unsure'")
@@ -230,7 +231,7 @@ func main() {
 			log.Println("done")
 		}()
 
-		err = train(os.Stdin, c, *doTrain == "spam", *verbose)
+		err = train(os.Stdin, c, *doTrain == "spam", *learnFactor, *verbose)
 		if err != nil {
 			log.Fatalf("can't train message as %s: %s", *doTrain, err)
 		}
