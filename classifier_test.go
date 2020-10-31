@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/dgraph-io/badger/v2"
+	"github.com/xujiajun/nutsdb"
 )
 
 func TestScan(t *testing.T) {
@@ -108,6 +108,41 @@ func TestWord_SpamLikelihood(t *testing.T) {
 	}
 }
 
+func TestClassifier_Train(t *testing.T) {
+	words := []struct {
+		word string
+		spam bool
+	}{
+		{"foo", true},
+		{"bar", false},
+	}
+
+	opts := nutsdb.DefaultOptions
+	opts.Dir = "words.db"
+	db, err := nutsdb.Open(opts)
+	if err != nil {
+		t.Fatalf("can't open db file: %s", err)
+	}
+	defer db.Close()
+
+	c := NewClassifier(db, 0.3, 0.7)
+
+	for _, w := range words {
+		c.Train(w.word, w.spam, 1)
+	}
+
+	if c.total["foo"] != 1 || c.total["bar"] != 1 {
+		t.Errorf("unexpected total: %#v", c.total)
+	}
+
+
+	if c.spam["foo"] != 1 || c.spam["bar"] != -1 {
+		t.Errorf("unexpected spam: %#v", c.spam)
+	}
+
+	t.Logf("classifier: %#v", c)
+}
+
 func TestClassifier(t *testing.T) {
 	// First, test training
 	words := []struct {
@@ -137,7 +172,9 @@ func TestClassifier(t *testing.T) {
 		{"this", true, 1},
 	}
 
-	db, err := badger.Open(badger.DefaultOptions("words.db"))
+	opts := nutsdb.DefaultOptions
+	opts.Dir = "words.db"
+	db, err := nutsdb.Open(opts)
 	if err != nil {
 		t.Fatalf("can't open db file: %s", err)
 	}
@@ -205,16 +242,6 @@ func TestClassifier(t *testing.T) {
 		if tc.expectLabel != s.Label {
 			t.Errorf("expected label %q, got %q for text %d: %q", tc.expectLabel, s.Label, i, tc.txt)
 		}
-	}
-
-	if t.Failed() {
-		var buf bytes.Buffer
-		err := c.Dump(&buf)
-		if err != nil {
-			t.Errorf("can't dump classifier state: %s", err)
-		}
-
-		t.Logf("classifier state: %s", buf.String())
 	}
 }
 

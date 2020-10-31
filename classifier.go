@@ -6,15 +6,14 @@ import (
 	"io"
 	"log"
 	"math"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/dgraph-io/badger/v2"
 	"github.com/pkg/errors"
+	"github.com/xujiajun/nutsdb"
 )
 
 func ScanNGram(data []byte, atEOF bool) (advance int, token []byte, err error) {
@@ -81,7 +80,7 @@ func (w Word) String() string {
 }
 
 type Classifier struct {
-	db *badger.DB
+	db *nutsdb.DB
 
 	spam  map[string]int // used during training, persisted in Close
 	total map[string]int // see above
@@ -90,7 +89,7 @@ type Classifier struct {
 	thresholdSpam   float64
 }
 
-func NewClassifier(db *badger.DB, thresholdUnsure, thresholdSpam float64) Classifier {
+func NewClassifier(db *nutsdb.DB, thresholdUnsure, thresholdSpam float64) Classifier {
 	return Classifier{
 		db: db,
 
@@ -128,31 +127,22 @@ func (c Classifier) persistDelta(label string, work chan delta) error {
 			deltas = append(deltas, d)
 		}
 
-		err := c.db.Update(func(tx *badger.Txn) (err error) {
+		err := c.db.Update(func(tx *nutsdb.Tx) (err error) {
 			for _, delta := range deltas {
-				key := []byte(label + "-" + delta.w)
-
 				var v int
 
-				current, err := tx.Get(key)
-				switch err {
-				case badger.ErrKeyNotFound:
-					// Do nothing, assume current value is 0
-				case nil:
-					// Parse current value into v
-					err := current.Value(func(d []byte) error {
-						var err error
-						v, err = strconv.Atoi(string(d))
-						if err != nil {
-							return errors.Wrap(err, "can't parse current value")
-						}
-						return nil
-					})
-					if err != nil {
-						return err
-					}
+				current, err := tx.Get(label, []byte(delta.w))
+				switch {
+				case err == nutsdb.ErrKeyNotFound, err != nil && strings.HasPrefix(err.Error(), "not found"):
+					// Treat non-existent values as 0
+				case err != nil:
+					return fmt.Errorf("getting current value for %q: %w", delta.w, err)
 				default:
-					return fmt.Errorf("getting current value for %q: %w", key, err)
+					// Parse current value into v
+					v, err = strconv.Atoi(string(current.Value))
+					if err != nil {
+						return errors.Wrap(err, "can't parse current value")
+					}
 				}
 
 				v += delta.d
@@ -161,7 +151,7 @@ func (c Classifier) persistDelta(label string, work chan delta) error {
 					v = 0
 				}
 
-				err = tx.Set(key, []byte(strconv.Itoa(v)))
+				err = tx.Put(label, []byte(delta.w), []byte(strconv.Itoa(v)), 0)
 				if err != nil {
 					return errors.Wrap(err, "updating value")
 				}
@@ -212,118 +202,8 @@ func (c Classifier) Persist(verbose bool) error {
 		wg.Wait()
 	}
 
-	err := c.db.Sync()
-	if err != nil {
-		return errors.Wrap(err, "syncing db")
-	}
-
-	// Garbage collect DB
-	cycles := 0
-GC:
-	for {
-		err := c.db.RunValueLogGC(0.7)
-		switch err {
-		case badger.ErrNoRewrite:
-			break GC
-		case nil:
-			cycles++
-		default:
-			return errors.Wrap(err, "running db gc")
-		}
-	}
-
-	log.Println("ran", cycles, "complete GC cycles")
-
-	err = c.db.View(func(tx *badger.Txn) error {
-		it := tx.NewKeyIterator([]byte(""), badger.IteratorOptions{})
-		defer it.Close()
-
-		for it.Valid() {
-			item := it.Item()
-			log.Printf("item: %#v", item)
-			it.Next()
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		panic(err)
-	}
-
 	return nil
 
-}
-
-func (c Classifier) Dump(out io.Writer) error {
-	log.Println("starting dump")
-
-	var words []Word
-
-	err := c.db.View(func(tx *badger.Txn) error {
-		it := tx.NewKeyIterator([]byte("total-"), badger.IteratorOptions{})
-		defer it.Close()
-
-		for it.Valid() {
-			item := it.Item()
-
-			word := strings.SplitN(string(item.Key()), "-", 2)[1]
-			w, err := c.getWord(word)
-			if err != nil {
-				return fmt.Errorf("getting counters for %q: %w", word, err)
-			}
-
-			if w.Total > 5 {
-				words = append(words, w)
-			}
-
-			it.Next()
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		return errors.Wrap(err, "dumping database")
-	}
-
-	// Dump top 25 total words, and top 25 spam words
-	sort.Slice(words, func(i, j int) bool {
-		return words[i].Total > words[j].Total
-	})
-
-	_, err = fmt.Fprintln(out, "Top 25 words:")
-	if err != nil {
-		return errors.Wrap(err, "writing total header")
-	}
-
-	for idx := 0; idx < 25 && idx < len(words)-1; idx++ {
-		_, err = fmt.Fprintln(out, idx, words[idx])
-		if err != nil {
-			return errors.Wrap(err, "writing total entry "+strconv.Itoa(idx))
-		}
-	}
-
-	sort.Slice(words, func(i, j int) bool {
-		s1 := words[i].SpamLikelihood() * float64(words[i].Total)
-		s2 := words[j].SpamLikelihood() * float64(words[j].Total)
-
-		return s1 > s2
-	})
-
-	_, err = fmt.Fprintln(out, "Top 25 spam words:")
-	if err != nil {
-		return errors.Wrap(err, "writing spam header")
-	}
-
-	for idx := 0; idx < 25 && idx < len(words)-1; idx++ {
-		_, err = fmt.Fprintln(out, idx, words[idx])
-		if err != nil {
-			return errors.Wrap(err, "writing spam entry "+strconv.Itoa(idx))
-		}
-	}
-
-	return nil
 }
 
 func (c Classifier) getWord(word string) (Word, error) {
@@ -331,43 +211,28 @@ func (c Classifier) getWord(word string) (Word, error) {
 		Text: word,
 	}
 
-	err := c.db.View(func(tx *badger.Txn) error {
-		total, err := tx.Get([]byte("total-" + word))
-		switch err {
-		case badger.ErrKeyNotFound:
-		case nil:
-			err = total.Value(func(v []byte) error {
-				w.Total, err = strconv.Atoi(string(v))
-				if err != nil {
-					return errors.Wrap(err, "parsing total")
-				}
-
-				return nil
-			})
-
+	err := c.db.View(func(tx *nutsdb.Tx) error {
+		total, err := tx.Get("total", []byte(word))
+		switch {
+		case err == nutsdb.ErrKeyNotFound, err != nil && strings.HasPrefix(err.Error(), "not found"):
+			// Treat missing values as 0
+		case err == nil:
+			w.Total, err = strconv.Atoi(string(total.Value))
 			if err != nil {
-				return errors.Wrap(err, "reading total")
+				return errors.Wrap(err, "parsing total")
 			}
 		default:
 			return fmt.Errorf("getting total item for %q: %w", word, err)
 		}
 
-		spam, err := tx.Get([]byte("spam-" + word))
-		switch err {
-		case badger.ErrKeyNotFound:
-		case nil:
-			err = spam.Value(func(v []byte) error {
-				w.Spam, err = strconv.Atoi(string(v))
-				if err != nil {
-					return errors.Wrap(err, "parsing spam")
-				}
-
-				return nil
-
-			})
-
+		spam, err := tx.Get("spam", []byte(word))
+		switch {
+		case err == nutsdb.ErrKeyNotFound, err != nil && strings.HasPrefix(err.Error(), "not found"):
+			// Treat missing values as 0
+		case err == nil:
+			w.Spam, err = strconv.Atoi(string(spam.Value))
 			if err != nil {
-				return errors.Wrap(err, "reading spam")
+				return errors.Wrap(err, "parsing spam")
 			}
 		default:
 			return fmt.Errorf("getting spam item for %q: %w", word, err)

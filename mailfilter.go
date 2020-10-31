@@ -24,8 +24,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/pkg/profile"
-
-	badger "github.com/dgraph-io/badger/v2"
+	"github.com/xujiajun/nutsdb"
 )
 
 // writeMessage writes msg to out and returns a copy of out's body
@@ -150,7 +149,6 @@ func main() {
 		log.Fatalf("can't get home directory of user %#v", user)
 	}
 
-	dump := flag.Bool("dump", false, "dump frequency data to stdout")
 	verbose := flag.Bool("verbose", false, "be more verbose during training")
 	profilingAddr := flag.String("profilingAddr", "127.0.0.1:7999", "Listening address for profiling server")
 	dbPath := flag.String("dbPath", filepath.Join(user.HomeDir, ".mailfilter.db"), "path to word database")
@@ -198,10 +196,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	var db *badger.DB
+	var db *nutsdb.DB
 
 	for {
-		db, err = badger.Open(badger.DefaultOptions(*dbPath))
+		opts := nutsdb.DefaultOptions
+		opts.Dir = *dbPath
+		db, err = nutsdb.Open(opts)
 		if err != nil {
 			// Check if this is a temporary error, for example because of a lock timeout
 			var syserr syscall.Errno
@@ -248,13 +248,6 @@ func main() {
 		err := classify(os.Stdin, c, os.Stdout, mode)
 		if err != nil {
 			log.Fatalf("can't classify message: %s", err)
-		}
-	}
-
-	if *dump {
-		err := c.Dump(os.Stdout)
-		if err != nil {
-			log.Fatalf("can't dump word frequencies: %s", err)
 		}
 	}
 }
