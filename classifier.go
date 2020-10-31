@@ -254,7 +254,7 @@ func (c Classifier) Train(word string, spam bool, factor int) {
 	if spam {
 		c.spam[word] += factor
 	} else {
-		c.spam[word] += factor
+		c.spam[word] -= factor
 	}
 }
 
