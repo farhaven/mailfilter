@@ -146,7 +146,7 @@ func TestClassifier(t *testing.T) {
 	c := NewClassifier(db, 0.3, 0.7)
 
 	for _, w := range words {
-		c.Train(w.word, w.spam)
+		c.Train(w.word, w.spam, 1)
 	}
 
 	err = c.Persist(true)
