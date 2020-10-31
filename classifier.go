@@ -107,7 +107,7 @@ type delta struct {
 	d int
 }
 
-func (c Classifier) persistDelta(label string, deltas chan delta) error {
+func (c Classifier) persistDelta(label string, work chan delta) error {
 	switch label {
 	case "total", "spam":
 	default:
@@ -115,21 +115,21 @@ func (c Classifier) persistDelta(label string, deltas chan delta) error {
 	}
 
 	// Loop: collect a bunch of deltas, persist them at once
-	for first := range deltas {
+	for first := range work {
 		// Collect a bunch more
-		delta := []delta{first}
-		for len(delta) < 1024 {
-			d, ok := <-deltas
+		deltas := []delta{first}
+		for len(deltas) < 1024 {
+			d, ok := <-work
 			if !ok {
 				// channel closed, finish remaining work
 				break
 			}
 
-			delta = append(delta, d)
+			deltas = append(deltas, d)
 		}
 
 		err := c.db.Update(func(tx *badger.Txn) (err error) {
-			for _, delta := range delta {
+			for _, delta := range deltas {
 				key := []byte(label + "-" + delta.w)
 
 				var v int
