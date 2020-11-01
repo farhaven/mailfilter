@@ -206,7 +206,7 @@ func main() {
 		if err != nil {
 			// Check if this is a temporary error, for example because of a lock timeout
 			var syserr syscall.Errno
-			if errors.As(err, &syserr) && syserr.Temporary() {
+			if errors.Is(err, bitcask.ErrDatabaseLocked) || (errors.As(err, &syserr) && syserr.Temporary()) {
 				log.Printf("got temporary error %s, waiting 1s before retrying", syserr)
 				time.Sleep(1 * time.Second)
 				continue
