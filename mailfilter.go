@@ -25,7 +25,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/pkg/profile"
-	"github.com/xujiajun/nutsdb"
+	"github.com/prologic/bitcask"
 )
 
 // writeMessage writes msg to out and returns a copy of out's body
@@ -199,16 +199,10 @@ func main() {
 		flag.PrintDefaults()
 		os.Exit(1)
 	}
-
-	opts := nutsdb.DefaultOptions
-	opts.Dir = *dbPath
-	opts.RWMode = nutsdb.MMap
-	opts.SyncEnable = false
-
-	var db *nutsdb.DB
+	var db *bitcask.Bitcask
 
 	for {
-		db, err = nutsdb.Open(opts)
+		db, err = bitcask.Open(*dbPath)
 		if err != nil {
 			// Check if this is a temporary error, for example because of a lock timeout
 			var syserr syscall.Errno

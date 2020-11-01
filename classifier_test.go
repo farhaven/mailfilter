@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/xujiajun/nutsdb"
+	"github.com/prologic/bitcask"
 )
 
 func TestScan(t *testing.T) {
@@ -117,9 +117,7 @@ func TestClassifier_Train(t *testing.T) {
 		{"bar", false},
 	}
 
-	opts := nutsdb.DefaultOptions
-	opts.Dir = "words.db"
-	db, err := nutsdb.Open(opts)
+	db, err := bitcask.Open("words.db")
 	if err != nil {
 		t.Fatalf("can't open db file: %s", err)
 	}
@@ -134,7 +132,6 @@ func TestClassifier_Train(t *testing.T) {
 	if c.total["foo"] != 1 || c.total["bar"] != 1 {
 		t.Errorf("unexpected total: %#v", c.total)
 	}
-
 
 	if c.spam["foo"] != 1 || c.spam["bar"] != -1 {
 		t.Errorf("unexpected spam: %#v", c.spam)
@@ -172,9 +169,7 @@ func TestClassifier(t *testing.T) {
 		{"this", true, 1},
 	}
 
-	opts := nutsdb.DefaultOptions
-	opts.Dir = "words.db"
-	db, err := nutsdb.Open(opts)
+	db, err := bitcask.Open("words.db")
 	if err != nil {
 		t.Fatalf("can't open db file: %s", err)
 	}

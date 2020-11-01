@@ -7,13 +7,12 @@ import (
 	"log"
 	"math"
 	"strconv"
-	"strings"
 	"sync"
 	"unicode"
 	"unicode/utf8"
 
 	"github.com/pkg/errors"
-	"github.com/xujiajun/nutsdb"
+	"github.com/prologic/bitcask"
 )
 
 func ScanNGram(data []byte, atEOF bool) (advance int, token []byte, err error) {
@@ -80,7 +79,7 @@ func (w Word) String() string {
 }
 
 type Classifier struct {
-	db *nutsdb.DB
+	db *bitcask.Bitcask
 
 	spam  map[string]int // used during training, persisted in Close
 	total map[string]int // see above
@@ -89,7 +88,7 @@ type Classifier struct {
 	thresholdSpam   float64
 }
 
-func NewClassifier(db *nutsdb.DB, thresholdUnsure, thresholdSpam float64) Classifier {
+func NewClassifier(db *bitcask.Bitcask, thresholdUnsure, thresholdSpam float64) Classifier {
 	return Classifier{
 		db: db,
 
@@ -127,41 +126,34 @@ func (c Classifier) persistDelta(label string, work chan delta) error {
 			deltas = append(deltas, d)
 		}
 
-		err := c.db.Update(func(tx *nutsdb.Tx) (err error) {
-			for _, delta := range deltas {
-				var v int
+		for _, delta := range deltas {
+			key := []byte(label + "-" + delta.w)
+			var v int
 
-				current, err := tx.Get(label, []byte(delta.w))
-				switch {
-				case err == nutsdb.ErrKeyNotFound, err != nil && strings.HasPrefix(err.Error(), "not found"):
-					// Treat non-existent values as 0
-				case err != nil:
-					return fmt.Errorf("getting current value for %q: %w", delta.w, err)
-				default:
-					// Parse current value into v
-					v, err = strconv.Atoi(string(current.Value))
-					if err != nil {
-						return errors.Wrap(err, "can't parse current value")
-					}
-				}
-
-				v += delta.d
-				// clamp value to 0 so things don't get weird
-				if v < 0 {
-					v = 0
-				}
-
-				err = tx.Put(label, []byte(delta.w), []byte(strconv.Itoa(v)), 0)
+			current, err := c.db.Get(key)
+			switch err {
+			case bitcask.ErrKeyNotFound:
+				// Treat non-existent values as 0
+			case nil:
+				// Parse current value into v
+				v, err = strconv.Atoi(string(current))
 				if err != nil {
-					return errors.Wrap(err, "updating value")
+					return errors.Wrap(err, "can't parse current value")
 				}
+			default:
+				return fmt.Errorf("getting current value for %q: %w", delta.w, err)
 			}
 
-			return nil
-		})
+			v += delta.d
+			// clamp value to 0 so things don't get weird
+			if v < 0 {
+				v = 0
+			}
 
-		if err != nil {
-			panic(err)
+			err = c.db.Put(key, []byte(strconv.Itoa(v)))
+			if err != nil {
+				return errors.Wrap(err, "updating value")
+			}
 		}
 	}
 
@@ -211,38 +203,30 @@ func (c Classifier) getWord(word string) (Word, error) {
 		Text: word,
 	}
 
-	err := c.db.View(func(tx *nutsdb.Tx) error {
-		total, err := tx.Get("total", []byte(word))
-		switch {
-		case err == nutsdb.ErrKeyNotFound, err != nil && strings.HasPrefix(err.Error(), "not found"):
-			// Treat missing values as 0
-		case err == nil:
-			w.Total, err = strconv.Atoi(string(total.Value))
-			if err != nil {
-				return errors.Wrap(err, "parsing total")
-			}
-		default:
-			return fmt.Errorf("getting total item for %q: %w", word, err)
+	total, err := c.db.Get([]byte("total" + "-" + word))
+	switch err {
+	case bitcask.ErrKeyNotFound:
+		// Treat missing values as 0
+	case nil:
+		w.Total, err = strconv.Atoi(string(total))
+		if err != nil {
+			return w, errors.Wrap(err, "parsing total")
 		}
+	default:
+		return w, fmt.Errorf("getting total item for %q: %w", word, err)
+	}
 
-		spam, err := tx.Get("spam", []byte(word))
-		switch {
-		case err == nutsdb.ErrKeyNotFound, err != nil && strings.HasPrefix(err.Error(), "not found"):
-			// Treat missing values as 0
-		case err == nil:
-			w.Spam, err = strconv.Atoi(string(spam.Value))
-			if err != nil {
-				return errors.Wrap(err, "parsing spam")
-			}
-		default:
-			return fmt.Errorf("getting spam item for %q: %w", word, err)
+	spam, err := c.db.Get([]byte("spam" + "-" + word))
+	switch err {
+	case bitcask.ErrKeyNotFound:
+		// Treat missing values as 0
+	case nil:
+		w.Spam, err = strconv.Atoi(string(spam))
+		if err != nil {
+			return w, errors.Wrap(err, "parsing spam")
 		}
-
-		return nil
-	})
-
-	if err != nil {
-		return w, err
+	default:
+		return w, fmt.Errorf("getting spam item for %q: %w", word, err)
 	}
 
 	return w, nil
