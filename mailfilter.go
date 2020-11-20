@@ -166,6 +166,8 @@ func main() {
 
 	flag.Parse()
 
+	defer log.Println("done")
+
 	go func() {
 		log.Println("starting profiling server on", *profilingAddr)
 		err := http.ListenAndServe(*profilingAddr, nil)
@@ -222,12 +224,12 @@ func main() {
 
 	if *doTrain != "" {
 		defer func() {
+			log.Println("training done, persisting")
+
 			err := c.Persist(*verbose)
 			if err != nil {
 				log.Panicf("can't persist db: %s", err)
 			}
-
-			log.Println("done")
 		}()
 
 		err = train(os.Stdin, c, *doTrain == "spam", *learnFactor, *verbose)
