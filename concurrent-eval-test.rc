@@ -3,10 +3,14 @@
 
 go build .
 
+rm -rf words.db
+
+./mailfilter -dbPath=words.db -train=spam - < test-message/spam1.msg
+
 instance=()
 
 fn runInstance {
-	./mailfilter -classify=plain < test-message/spam1.msg >/dev/null >[2=1] &
+	./mailfilter -dbPath=words.db -classify=email < test-message/spam1.msg >/dev/null &
 
 	instance=($instance $apid)
 }
@@ -14,7 +18,7 @@ fn runInstance {
 fn runTest {
 	howmany=$1
 
-	echo ''Running $howmany tests''
+	echo ''Running $howmany concurrent instances''
 
 	for (x in `{seq $howmany}) {
 		runInstance
@@ -28,4 +32,4 @@ fn runTest {
 	echo 'Done waiting'
 }
 
-runTest 2
+runTest $1
