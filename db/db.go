@@ -41,11 +41,8 @@ type DB struct {
 // access and can be modified.
 func Open(file string, writeable bool) (*DB, error) {
 	flags := os.O_RDWR | os.O_CREATE
-	lockType := unix.LOCK_EX
-
 	if !writeable {
 		flags = os.O_RDONLY
-		lockType = unix.LOCK_SH
 	}
 
 	fh, err := os.OpenFile(file, flags, 0755)
@@ -53,10 +50,12 @@ func Open(file string, writeable bool) (*DB, error) {
 		return nil, fmt.Errorf("opening database file: %w", err)
 	}
 
-	err = unix.Flock(int(fh.Fd()), lockType)
-	if err != nil {
-		fh.Close()
-		return nil, fmt.Errorf("locking database: %w", err)
+	if writeable {
+		err = unix.Flock(int(fh.Fd()), unix.LOCK_EX)
+		if err != nil {
+			fh.Close()
+			return nil, fmt.Errorf("locking database: %w", err)
+		}
 	}
 
 	fpath, err := filepath.Abs(file)
