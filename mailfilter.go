@@ -199,7 +199,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	db, err := db.Open(*dbPath, true)
+	needWritable := false
+	if *doClassify != "" {
+		needWritable = true
+	}
+
+	db, err := db.Open(*dbPath, needWritable)
 	if err != nil {
 		log.Fatalf("can't open database: %s", err)
 	}
