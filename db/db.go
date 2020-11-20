@@ -39,7 +39,7 @@ type DB struct {
 // Open opens (and creates, if necessary) a new database. If writeable is false, the
 // database is opened in shared, read only mode. Otherwise, it is locked for exclusive
 // access and can be modified.
-func Open(file string, writeable bool) (*DB, error) {
+func Open(file string, writeable bool) (db *DB, err error) {
 	flags := os.O_RDWR | os.O_CREATE
 	if !writeable {
 		flags = os.O_RDONLY
@@ -50,21 +50,25 @@ func Open(file string, writeable bool) (*DB, error) {
 		return nil, fmt.Errorf("opening database file: %w", err)
 	}
 
+	defer func() {
+		if err != nil {
+			fh.Close()
+		}
+	}()
+
 	if writeable {
 		err = unix.Flock(int(fh.Fd()), unix.LOCK_EX)
 		if err != nil {
-			fh.Close()
 			return nil, fmt.Errorf("locking database: %w", err)
 		}
 	}
 
 	fpath, err := filepath.Abs(file)
 	if err != nil {
-		fh.Close()
 		return nil, fmt.Errorf("determining absolute path of %s: %w", file, err)
 	}
 
-	db := DB{
+	db = &DB{
 		path:      fpath,
 		writeable: writeable,
 		fh:        fh,
@@ -74,11 +78,10 @@ func Open(file string, writeable bool) (*DB, error) {
 	dec := gob.NewDecoder(fh)
 	err = dec.Decode(&db.m)
 	if err != nil && !writeable {
-		fh.Close()
 		return nil, fmt.Errorf("can't decode database: %w", err)
 	}
 
-	return &db, nil
+	return db, nil
 }
 
 // Close persists the data in d and closes the database.

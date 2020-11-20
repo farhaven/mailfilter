@@ -94,5 +94,4 @@ func TestDB_SetGet(t *testing.T) {
 	if !errors.Is(err, ErrClosed) {
 		t.Errorf("expected closed error, got %v", err)
 	}
-
 }

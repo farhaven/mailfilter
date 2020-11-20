@@ -15,7 +15,6 @@ import (
 	"log"
 	"net/http"
 	_ "net/http/pprof"
-	"net/mail"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -26,32 +25,6 @@ import (
 
 	"mailfilter/db"
 )
-
-// writeMessage writes msg to out and returns a copy of out's body
-func writeMessage(msg *mail.Message, out io.Writer) (io.Reader, error) {
-	for hdr, vals := range msg.Header {
-		for _, val := range vals {
-			_, err := fmt.Fprintln(out, hdr+":", val)
-			if err != nil {
-				return nil, errors.Wrap(err, "writing header")
-			}
-		}
-	}
-
-	_, err := fmt.Fprintln(out, "")
-	if err != nil {
-		return nil, errors.Wrap(err, "writing header/body separator")
-	}
-
-	var buf bytes.Buffer
-
-	_, err = io.Copy(out, io.TeeReader(msg.Body, &buf))
-	if err != nil {
-		return nil, errors.Wrap(err, "writing body")
-	}
-
-	return &buf, nil
-}
 
 // train reads text from in and trains the given classifier to recognize
 // the text as ham or spam, depending on the spam flag.
@@ -114,6 +87,10 @@ func classify(in io.Reader, c Classifier, out io.Writer, how ClassifyMode) error
 	r := bufio.NewReader(&msg)
 	for {
 		line, err := r.ReadString('\n')
+		if err != nil {
+			return errors.Wrap(err, "reading line")
+		}
+
 		if line == "\n" {
 			// End of header block, insert verdict
 			_, err = fmt.Fprintf(out, "X-Mailfilter: %s\n\n", label)
