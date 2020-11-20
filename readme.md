@@ -1,4 +1,6 @@
 # Mailfilter
+![Build](https://github.com/farhaven/mailfilter/workflows/Build/badge.svg)
+![Lint](https://github.com/farhaven/mailfilter/workflows/Lint/badge.svg)
 
 This is a very simple Bayesian classifier for RFC2046-formatted mail.
 
