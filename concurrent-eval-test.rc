@@ -1,0 +1,31 @@
+#!/home/gbe/plan9port/bin/rc -e
+# This test file simulates a "many instances of the filter are trying to evaluate ham/spam concurrently" scenario. This often happens when using something like maildrop's xfilter option, which spawns an instance of the filter for each message.
+
+go build .
+
+instance=()
+
+fn runInstance {
+	./mailfilter -classify=plain < test-message/spam1.msg >/dev/null >[2=1] &
+
+	instance=($instance $apid)
+}
+
+fn runTest {
+	howmany=$1
+
+	echo ''Running $howmany tests''
+
+	for (x in `{seq $howmany}) {
+		runInstance
+	}
+
+	for (pid in $instance) {
+		echo ''Waiting for pid $pid''
+		wait $pid
+	}
+
+	echo 'Done waiting'
+}
+
+runTest 2
