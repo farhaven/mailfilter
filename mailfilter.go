@@ -20,12 +20,11 @@ import (
 	"os/user"
 	"path/filepath"
 	"runtime"
-	"syscall"
-	"time"
 
 	"github.com/pkg/errors"
 	"github.com/pkg/profile"
-	"github.com/prologic/bitcask"
+
+	"mailfilter/db"
 )
 
 // writeMessage writes msg to out and returns a copy of out's body
@@ -199,23 +198,13 @@ func main() {
 		flag.PrintDefaults()
 		os.Exit(1)
 	}
-	var db *bitcask.Bitcask
 
-	for {
-		db, err = bitcask.Open(*dbPath)
-		if err != nil {
-			// Check if this is a temporary error, for example because of a lock timeout
-			var syserr syscall.Errno
-			if errors.Is(err, bitcask.ErrDatabaseLocked) || (errors.As(err, &syserr) && syserr.Temporary()) {
-				log.Printf(`got temporary error "%s", waiting 1s before retrying`, err)
-				time.Sleep(1 * time.Second)
-				continue
-			}
-
-			log.Fatalf("can't open database: %s", err)
-		}
-		break
+	db, err := db.Open(*dbPath, true)
+	if err != nil {
+		log.Fatalf("can't open database: %s", err)
 	}
+
+	defer db.Dump()
 	defer db.Close()
 
 	log.Println("database open")

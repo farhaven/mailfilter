@@ -7,7 +7,7 @@ Here's how to use it:
 ## General usage
 
 ```
-; <./mailfilter -help
+; ./mailfilter -help
 Usage of ./mailfilter:
   -classify string
     	How to classify this message. If empty, no classification is done. One of [email, plain] (default "email")

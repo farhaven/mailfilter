@@ -4,13 +4,12 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"mailfilter/db"
 	"math"
 	"os"
 	"regexp"
 	"strconv"
 	"testing"
-
-	"github.com/prologic/bitcask"
 )
 
 func TestScan(t *testing.T) {
@@ -117,7 +116,7 @@ func TestClassifier_Train(t *testing.T) {
 		{"bar", false},
 	}
 
-	db, err := bitcask.Open("words.db")
+	db, err := db.Open("words.db", true)
 	if err != nil {
 		t.Fatalf("can't open db file: %s", err)
 	}
@@ -169,7 +168,7 @@ func TestClassifier(t *testing.T) {
 		{"this", true, 1},
 	}
 
-	db, err := bitcask.Open("words.db")
+	db, err := db.Open("words.db", true)
 	if err != nil {
 		t.Fatalf("can't open db file: %s", err)
 	}

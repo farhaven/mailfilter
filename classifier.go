@@ -4,15 +4,11 @@ import (
 	"bufio"
 	"fmt"
 	"io"
-	"log"
 	"math"
-	"strconv"
-	"sync"
 	"unicode"
 	"unicode/utf8"
 
 	"github.com/pkg/errors"
-	"github.com/prologic/bitcask"
 )
 
 func ScanNGram(data []byte, atEOF bool) (advance int, token []byte, err error) {
@@ -78,8 +74,13 @@ func (w Word) String() string {
 	return fmt.Sprintf("{%s %d %d -> %.3f}", w.Text, w.Total, w.Spam, w.SpamLikelihood())
 }
 
+type DB interface {
+	Get(bucket string, key string) int
+	Inc(bucket string, key string, delta int, clamp bool) error
+}
+
 type Classifier struct {
-	db *bitcask.Bitcask
+	db DB
 
 	spam  map[string]int // used during training, persisted in Close
 	total map[string]int // see above
@@ -88,7 +89,7 @@ type Classifier struct {
 	thresholdSpam   float64
 }
 
-func NewClassifier(db *bitcask.Bitcask, thresholdUnsure, thresholdSpam float64) Classifier {
+func NewClassifier(db DB, thresholdUnsure, thresholdSpam float64) Classifier {
 	return Classifier{
 		db: db,
 
@@ -100,98 +101,19 @@ func NewClassifier(db *bitcask.Bitcask, thresholdUnsure, thresholdSpam float64) 
 	}
 }
 
-type delta struct {
-	w string
-	d int
-}
-
-func (c Classifier) persistDelta(label string, work chan delta) error {
-	switch label {
-	case "total", "spam":
-	default:
-		return errors.New("unexpected label: " + label)
-	}
-
-	// Loop: collect a bunch of deltas, persist them at once
-	for first := range work {
-		// Collect a bunch more
-		deltas := []delta{first}
-		for len(deltas) < 32 {
-			d, ok := <-work
-			if !ok {
-				// channel closed, finish remaining work
-				break
-			}
-
-			deltas = append(deltas, d)
-		}
-
-		for _, delta := range deltas {
-			key := []byte(label + "-" + delta.w)
-			var v int
-
-			current, err := c.db.Get(key)
-			switch err {
-			case bitcask.ErrKeyNotFound:
-				// Treat non-existent values as 0
-			case nil:
-				// Parse current value into v
-				v, err = strconv.Atoi(string(current))
-				if err != nil {
-					return errors.Wrap(err, "can't parse current value")
-				}
-			default:
-				return fmt.Errorf("getting current value for %q: %w", delta.w, err)
-			}
-
-			v += delta.d
-			// clamp value to 0 so things don't get weird
-			if v < 0 {
-				v = 0
-			}
-
-			err = c.db.Put(key, []byte(strconv.Itoa(v)))
-			if err != nil {
-				return errors.Wrap(err, "updating value")
-			}
-		}
-	}
-
-	return nil
-}
-
 func (c Classifier) Persist(verbose bool) error {
-	const concurrency = 8
-
-	for _, label := range []string{"total", "spam"} {
-		var wg sync.WaitGroup
-		wg.Add(concurrency)
-
-		deltas := make(chan delta)
-		for idx := 0; idx < concurrency; idx++ {
-			go func() {
-				defer wg.Done()
-				err := c.persistDelta(label, deltas)
-				if err != nil {
-					log.Panicf("failed to persist %s: %s", label, err)
-				}
-			}()
+	for word, diff := range c.total {
+		err := c.db.Inc("total", word, diff, true)
+		if err != nil {
+			return fmt.Errorf("updating total for %q: %w", word, err)
 		}
+	}
 
-		source := c.total
-		if label == "spam" {
-			source = c.spam
+	for word, diff := range c.spam {
+		err := c.db.Inc("spam", word, diff, true)
+		if err != nil {
+			return fmt.Errorf("updating spam score for %q: %w", word, err)
 		}
-
-		for word, diff := range source {
-			deltas <- delta{
-				w: word,
-				d: diff,
-			}
-		}
-
-		close(deltas)
-		wg.Wait()
 	}
 
 	return nil
@@ -203,31 +125,8 @@ func (c Classifier) getWord(word string) (Word, error) {
 		Text: word,
 	}
 
-	total, err := c.db.Get([]byte("total" + "-" + word))
-	switch err {
-	case bitcask.ErrKeyNotFound:
-		// Treat missing values as 0
-	case nil:
-		w.Total, err = strconv.Atoi(string(total))
-		if err != nil {
-			return w, errors.Wrap(err, "parsing total")
-		}
-	default:
-		return w, fmt.Errorf("getting total item for %q: %w", word, err)
-	}
-
-	spam, err := c.db.Get([]byte("spam" + "-" + word))
-	switch err {
-	case bitcask.ErrKeyNotFound:
-		// Treat missing values as 0
-	case nil:
-		w.Spam, err = strconv.Atoi(string(spam))
-		if err != nil {
-			return w, errors.Wrap(err, "parsing spam")
-		}
-	default:
-		return w, fmt.Errorf("getting spam item for %q: %w", word, err)
-	}
+	w.Total = c.db.Get("total", word)
+	w.Spam = c.db.Get("spam", word)
 
 	return w, nil
 }
