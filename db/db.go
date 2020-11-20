@@ -9,8 +9,10 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
+	"path/filepath"
 	"sync"
 
 	"golang.org/x/sys/unix"
@@ -22,7 +24,11 @@ var (
 )
 
 type DB struct {
-	fh        *os.File
+	path string
+
+	// fh needs to be held open even after loading the db because the file lock is attached to it.
+	fh *os.File
+
 	writeable bool
 	closed    bool
 
@@ -53,15 +59,17 @@ func Open(file string, writeable bool) (*DB, error) {
 		return nil, fmt.Errorf("locking database: %w", err)
 	}
 
+	fpath, err := filepath.Abs(file)
+	if err != nil {
+		fh.Close()
+		return nil, fmt.Errorf("determining absolute path of %s: %w", file, err)
+	}
+
 	db := DB{
+		path:      fpath,
 		writeable: writeable,
 		fh:        fh,
 		m:         make(map[string]map[string]int),
-	}
-
-	_, err = fh.Seek(0, 0)
-	if err != nil {
-		return nil, err
 	}
 
 	dec := gob.NewDecoder(fh)
@@ -76,22 +84,30 @@ func Open(file string, writeable bool) (*DB, error) {
 
 // Close persists the data in d and closes the database.
 func (d *DB) Close() error {
-	if d.writeable {
-		_, err := d.fh.Seek(0, 0)
-		if err != nil {
-			return err
-		}
+	defer func() {
+		d.closed = true
+	}()
 
-		enc := gob.NewEncoder(d.fh)
-		err = enc.Encode(d.m)
-		if err != nil {
-			return fmt.Errorf("encoding database: %w", err)
-		}
+	if !d.writeable {
+		return d.fh.Close()
 	}
 
-	d.closed = true
+	tempFH, err := ioutil.TempFile(filepath.Dir(d.path), "mailfilter")
+	if err != nil {
+		return fmt.Errorf("creating temp file: %w", err)
+	}
+	defer tempFH.Close()
 
-	// We don't need to explicitly unlock the file handle, closing it removes all locks.
+	enc := gob.NewEncoder(tempFH)
+	err = enc.Encode(d.m)
+	if err != nil {
+		return fmt.Errorf("encoding database: %w", err)
+	}
+
+	err = os.Rename(tempFH.Name(), d.path)
+	if err != nil {
+		return fmt.Errorf("updating database: %w", err)
+	}
 
 	return d.fh.Close()
 }
