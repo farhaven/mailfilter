@@ -203,8 +203,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("can't open database: %s", err)
 	}
-
-	defer db.Dump()
 	defer db.Close()
 
 	log.Println("database open")
