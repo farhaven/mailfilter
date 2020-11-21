@@ -75,7 +75,7 @@ func (w Word) String() string {
 }
 
 type DB interface {
-	Get(bucket string, key string) int
+	Get(bucket string, key string) (int, error)
 	Inc(bucket string, key string, delta int, clamp bool) error
 }
 
@@ -125,8 +125,17 @@ func (c Classifier) getWord(word string) (Word, error) {
 		Text: word,
 	}
 
-	w.Total = c.db.Get("total", word)
-	w.Spam = c.db.Get("spam", word)
+	var err error
+
+	w.Total, err = c.db.Get("total", word)
+	if err != nil {
+		return w, err
+	}
+
+	w.Spam, err = c.db.Get("spam", word)
+	if err != nil {
+		return w, err
+	}
 
 	return w, nil
 }

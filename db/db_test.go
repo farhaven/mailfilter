@@ -3,37 +3,33 @@ package db
 import (
 	"errors"
 	"os"
+	"strconv"
 	"testing"
 )
 
 func TestDB_Open(t *testing.T) {
-	os.Remove("test.db")
+	os.RemoveAll("test.db")
 
 	testCases := []struct {
-		name        string
-		writeable   bool
-		expectError bool
+		name      string
+		writeable bool
 	}{
-		{name: "readonly, not existing", writeable: false, expectError: true},
-		{name: "rw, not existing", writeable: true, expectError: false},
-		{name: "readonly, existing", writeable: false, expectError: false},
-		{name: "rw, existing", writeable: true, expectError: false},
+		{name: "readonly, not existing", writeable: false},
+		{name: "rw, not existing", writeable: true},
+		{name: "readonly, existing", writeable: false},
+		{name: "rw, existing", writeable: true},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			db, err := Open("test.db", tc.writeable)
 
-			if tc.expectError && err == nil {
-				t.Error("expected an error, got nil")
-			} else if !tc.expectError {
+			if err != nil {
+				t.Error("unexpected error during open:", err)
+			} else {
+				err := db.Close()
 				if err != nil {
-					t.Error("unexpected error during open:", err)
-				} else {
-					err := db.Close()
-					if err != nil {
-						t.Error("unexpected error during close:", err)
-					}
+					t.Error("unexpected error during close:", err)
 				}
 			}
 		})
@@ -41,7 +37,7 @@ func TestDB_Open(t *testing.T) {
 }
 
 func TestDB_SetGet(t *testing.T) {
-	os.Remove("test.db")
+	os.RemoveAll("test.db")
 
 	db, err := Open("test.db", true)
 	if err != nil {
@@ -55,7 +51,10 @@ func TestDB_SetGet(t *testing.T) {
 		t.Error("unexpected error:", err)
 	}
 
-	got := db.Get("test", "foo")
+	got, err := db.Get("test", "foo")
+	if err != nil {
+		t.Fatalf("unexpected error: %s", err)
+	}
 
 	if want != got {
 		t.Errorf("unexpected value, want %d, got %d", want, got)
@@ -72,7 +71,10 @@ func TestDB_SetGet(t *testing.T) {
 		t.Fatal("unexpected error:", err)
 	}
 
-	got = db.Get("test", "foo")
+	got, err = db.Get("test", "foo")
+	if err != nil {
+		t.Fatalf("unexpected error: %s", err)
+	}
 
 	if want != got {
 		t.Errorf("unexpected value, want %d, got %d", want, got)
@@ -93,5 +95,96 @@ func TestDB_SetGet(t *testing.T) {
 	err = db.Set("test", "foo", 1234)
 	if !errors.Is(err, ErrClosed) {
 		t.Errorf("expected closed error, got %v", err)
+	}
+}
+
+func TestDB_ManyGetSet(t *testing.T) {
+	os.RemoveAll("test.db")
+
+	db, err := Open("test.db", true)
+	if err != nil {
+		t.Fatal("unexpected error:", err)
+	}
+
+	const howMany = 1e5
+
+	for i := 0; i < howMany; i++ {
+		err = db.Set("test", strconv.Itoa(i), i)
+		if err != nil {
+			t.Error("unexpected error:", err)
+		}
+	}
+
+	err = db.Close()
+	if err != nil {
+		t.Fatal("unexpected error:", err)
+	}
+
+	db, err = Open("test.db", false)
+	if err != nil {
+		t.Fatal("unexpected error:", err)
+	}
+	defer db.Close()
+
+	for i := 0; i < howMany; i++ {
+		got, err := db.Get("test", strconv.Itoa(i))
+		if err != nil {
+			t.Error("unexpected error:", err)
+		}
+
+		if i != got {
+			t.Fatalf("unexpected value. want %d, got %d", i, got)
+		}
+	}
+}
+
+func BenchmarkLoadStore(b *testing.B) {
+	const howMany = 1e6
+
+	os.RemoveAll("test.db")
+
+	db, err := Open("test.db", true)
+	if err != nil {
+		b.Fatal("unexpected error:", err)
+	}
+
+	for i := 0; i < howMany; i++ {
+		db.Set("test", strconv.Itoa(i), i+1)
+	}
+
+	db.Close()
+
+	b.ResetTimer()
+
+	for it := 0; it < b.N; it++ {
+		db, err := Open("test.db", true)
+		if err != nil {
+			b.Fatal("unexpected error:", err)
+		}
+
+		for i := 0; i < howMany; i++ {
+			db.Set("test", strconv.Itoa(i), i+1)
+		}
+
+		db.Close()
+
+		// Re-open DB readonly
+		db, err = Open("test.db", false)
+		if err != nil {
+			b.Fatal("unexpected error:", err)
+		}
+
+		for i := 0; i < howMany; i += 2 {
+			v, err := db.Get("test", strconv.Itoa(i))
+			if err != nil {
+				b.Fatalf("unexpected error for %d: %s", i, err)
+			}
+
+			if v == 0 {
+				b.Fatalf("unexpected zero for %d", i)
+			}
+		}
+
+		db.Close()
 	}
 }
