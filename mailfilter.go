@@ -180,7 +180,7 @@ func main() {
 	}
 
 	needWritable := false
-	if *doClassify != "" {
+	if *doTrain != "" {
 		needWritable = true
 	}
 
@@ -195,7 +195,7 @@ func main() {
 
 	defer db.Close()
 
-	log.Println("database open")
+	log.Println("database open, writable:", needWritable)
 
 	c := NewClassifier(db, *thresholdUnsure, *thresholdSpam)
 
