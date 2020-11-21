@@ -179,12 +179,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	needWritable := false
+	needWriteable := false
 	if *doTrain != "" {
-		needWritable = true
+		needWriteable = true
 	}
 
-	db, err := db.Open(*dbPath, needWritable)
+	db, err := db.Open(*dbPath, needWriteable)
 	if err != nil {
 		log.Fatalf("can't open database: %s", err)
 	}
@@ -195,7 +195,7 @@ func main() {
 
 	defer db.Close()
 
-	log.Println("database open, writable:", needWritable)
+	log.Println("database open, writeable:", needWriteable)
 
 	c := NewClassifier(db, *thresholdUnsure, *thresholdSpam)
 
