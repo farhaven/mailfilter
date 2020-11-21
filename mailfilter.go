@@ -29,11 +29,21 @@ import (
 // train reads text from in and trains the given classifier to recognize
 // the text as ham or spam, depending on the spam flag.
 func train(in io.Reader, c Classifier, spam bool, learnFactor int) error {
-	scanner := bufio.NewScanner(NewFilteredReader(in))
-	scanner.Split(ScanNGram)
+	words := make(chan string, 8192)
 
-	for scanner.Scan() {
-		word := scanner.Text()
+	go func() {
+		defer close(words)
+
+		scanner := bufio.NewScanner(NewFilteredReader(in))
+		scanner.Split(ScanNGram)
+
+		for scanner.Scan() {
+			word := scanner.Text()
+			words <- word
+		}
+	}()
+
+	for word := range words {
 		c.Train(word, spam, learnFactor)
 	}
 
