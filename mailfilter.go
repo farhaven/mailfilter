@@ -28,19 +28,13 @@ import (
 
 // train reads text from in and trains the given classifier to recognize
 // the text as ham or spam, depending on the spam flag.
-func train(in io.Reader, c Classifier, spam bool, learnFactor int, verbose bool) error {
+func train(in io.Reader, c Classifier, spam bool, learnFactor int) error {
 	scanner := bufio.NewScanner(NewFilteredReader(in))
 	scanner.Split(ScanNGram)
 
-	words := 0
 	for scanner.Scan() {
 		word := scanner.Text()
 		c.Train(word, spam, learnFactor)
-		words++
-	}
-
-	if verbose {
-		log.Println("trained", words, "words", spam)
 	}
 
 	return nil
@@ -129,7 +123,6 @@ func main() {
 		log.Fatalf("can't get home directory of user %#v", user)
 	}
 
-	verbose := flag.Bool("verbose", false, "be more verbose during training")
 	profilingAddr := flag.String("profilingAddr", "127.0.0.1:7999", "Listening address for profiling server")
 	dbPath := flag.String("dbPath", filepath.Join(user.HomeDir, ".mailfilter.db"), "path to word database")
 
@@ -203,13 +196,13 @@ func main() {
 		defer func() {
 			log.Println("training done, persisting")
 
-			err := c.Persist(*verbose)
+			err := c.Persist()
 			if err != nil {
 				log.Panicf("can't persist db: %s", err)
 			}
 		}()
 
-		err = train(os.Stdin, c, *doTrain == "spam", *learnFactor, *verbose)
+		err = train(os.Stdin, c, *doTrain == "spam", *learnFactor)
 		if err != nil {
 			log.Fatalf("can't train message as %s: %s", *doTrain, err)
 		}

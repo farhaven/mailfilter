@@ -101,7 +101,7 @@ func NewClassifier(db DB, thresholdUnsure, thresholdSpam float64) Classifier {
 	}
 }
 
-func (c Classifier) Persist(verbose bool) error {
+func (c Classifier) Persist() error {
 	for word, diff := range c.total {
 		err := c.db.Inc("total", word, diff, true)
 		if err != nil {
