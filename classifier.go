@@ -76,7 +76,7 @@ func (w Word) String() string {
 
 type DB interface {
 	Get(bucket string, key string) (int, error)
-	Inc(bucket string, key string, delta int, clamp bool) error
+	Set(bucket string, key string, delta int) error
 }
 
 type Classifier struct {
@@ -103,14 +103,34 @@ func NewClassifier(db DB, thresholdUnsure, thresholdSpam float64) Classifier {
 
 func (c Classifier) Persist() error {
 	for word, diff := range c.total {
-		err := c.db.Inc("total", word, diff, true)
+		count, err := c.db.Get("total", word)
+		if err != nil {
+			return fmt.Errorf("getting total for %q: %w", word, err)
+		}
+
+		count += diff
+		if count < 0 {
+			count = 0
+		}
+
+		err = c.db.Set("total", word, count)
 		if err != nil {
 			return fmt.Errorf("updating total for %q: %w", word, err)
 		}
 	}
 
 	for word, diff := range c.spam {
-		err := c.db.Inc("spam", word, diff, true)
+		count, err := c.db.Get("spam", word)
+		if err != nil {
+			return fmt.Errorf("getting spam score for %q: %w", word, err)
+		}
+
+		count += diff
+		if count < 0 {
+			count = 0
+		}
+
+		err = c.db.Set("spam", word, count)
 		if err != nil {
 			return fmt.Errorf("updating spam score for %q: %w", word, err)
 		}

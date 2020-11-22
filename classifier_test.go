@@ -180,7 +180,7 @@ func TestClassifier(t *testing.T) {
 		c.Train(w.word, w.spam, 1)
 	}
 
-	err = c.Persist(true)
+	err = c.Persist()
 	if err != nil {
 		t.Fatalf("can't persist trained data: %s", err)
 	}

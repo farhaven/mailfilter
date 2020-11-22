@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"hash/fnv"
 	"io/ioutil"
-	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -27,6 +26,11 @@ var (
 	ErrClosed   = errors.New("closed database")
 )
 
+type mapKey struct {
+	bucket string
+	key    string
+}
+
 type DB struct {
 	path string
 
@@ -37,9 +41,11 @@ type DB struct {
 
 	sg singleflight.Group
 
+	dirty sync.Map // Maps mapKey to bool, indicating "dirty" values
+
+	values sync.Map // Maps mapKey to integer values
+
 	mu     sync.Mutex
-	m      map[string]map[string]int
-	dirty  map[string]map[string]bool
 	loaded map[string]bool // identifies already loaded partial maps, to prevent needless reloads
 }
 
@@ -56,8 +62,6 @@ func Open(path string, writeable bool) (db *DB, err error) {
 		path:      fullPath,
 		writeable: writeable,
 
-		m:      make(map[string]map[string]int),
-		dirty:  make(map[string]map[string]bool),
 		loaded: make(map[string]bool),
 	}
 
@@ -88,7 +92,7 @@ func Open(path string, writeable bool) (db *DB, err error) {
 	return db, nil
 }
 
-func (d *DB) getID(bucket, key string) int {
+func (d *DB) getID(key string) int {
 	const numChunks = 32
 
 	h := fnv.New32()
@@ -114,25 +118,26 @@ func (d *DB) Close() error {
 	// Collect partial maps
 	partials := make(map[string]map[string]int)
 
-	for bucket, values := range d.m {
-		if d.dirty[bucket] == nil {
-			continue
+	d.values.Range(func(k, v interface{}) bool {
+		mk := k.(mapKey)
+		value := v.(int)
+
+		dirtyVal, ok := d.dirty.Load(mk)
+
+		if !ok || !dirtyVal.(bool) {
+			return true
 		}
 
-		for key, value := range values {
-			if !d.dirty[bucket][key] {
-				continue
-			}
+		p := mk.bucket + "-" + strconv.Itoa(d.getID(mk.key))
 
-			p := bucket + "-" + strconv.Itoa(d.getID(bucket, key))
-
-			if partials[p] == nil {
-				partials[p] = make(map[string]int)
-			}
-
-			partials[p][key] = value
+		if partials[p] == nil {
+			partials[p] = make(map[string]int)
 		}
-	}
+
+		partials[p][mk.key] = value
+
+		return true
+	})
 
 	// Write out partial maps
 	var eg errgroup.Group
@@ -171,7 +176,7 @@ func (d *DB) Close() error {
 	return nil
 }
 
-func (d *DB) setLocked(bucket, key string, val int) error {
+func (d *DB) setInternal(mk mapKey, val int) error {
 	if d.closed {
 		return ErrClosed
 	}
@@ -180,40 +185,26 @@ func (d *DB) setLocked(bucket, key string, val int) error {
 		return ErrReadonly
 	}
 
-	if d.m[bucket] == nil || d.m[bucket][key] == 0 {
-		err := d.load(bucket, key)
-		if err != nil {
-			return err
-		}
-	}
-
 	if val == 0 {
-		delete(d.m[bucket], key)
+		d.values.Delete(mk)
 	} else {
-		d.m[bucket][key] = val
+		d.values.Store(mk, val)
 	}
 
-	if len(d.m[bucket]) == 0 {
-		delete(d.m, bucket)
-	}
-
-	if d.dirty[bucket] == nil {
-		d.dirty[bucket] = make(map[string]bool)
-	}
-
-	d.dirty[bucket][key] = true
+	d.dirty.Store(mk, true)
 
 	return nil
 }
 
-func (d *DB) load(bucket, key string) error {
+func (d *DB) load(mk mapKey) error {
 	// Unlock the db while we're fiddling around with files so that other goroutines can do some useful
 	// work while we're loading stuff.
-	p := filepath.Join(d.path, bucket+"-"+strconv.Itoa(d.getID(bucket, key)))
+	p := filepath.Join(d.path, mk.bucket+"-"+strconv.Itoa(d.getID(mk.key)))
+	d.mu.Lock()
 	if d.loaded[p] {
+		d.mu.Unlock()
 		return nil
 	}
-
 	d.mu.Unlock()
 
 	mVal, err, _ := d.sg.Do(p, func() (interface{}, error) {
@@ -235,81 +226,61 @@ func (d *DB) load(bucket, key string) error {
 	})
 
 	if err != nil {
-		d.mu.Lock()
 		return err
 	}
 
 	m := mVal.(map[string]int)
 
 	d.mu.Lock()
-
 	d.loaded[p] = true
+	d.mu.Unlock()
 
-	if d.m[bucket] == nil {
-		d.m[bucket] = m
-	} else {
-		for k, v := range m {
-			d.m[bucket][k] = v
-		}
+	for k, v := range m {
+		mk.key = k
+
+		d.values.Store(mk, v)
 	}
 
 	return nil
 }
 
-func (d *DB) getLocked(bucket, key string) (int, error) {
-	if d.m[bucket] == nil || d.m[bucket][key] == 0 {
-		err := d.load(bucket, key)
+func (d *DB) getInternal(mk mapKey) (int, error) {
+	val, ok := d.values.Load(mk)
+	if !ok {
+		// Not found. Let's try faulting it in.
+		// TODO: have d.load return a value indicating whether we need to re-load.
+		err := d.load(mk)
 		if err != nil {
 			return 0, err
 		}
+
+		val, ok = d.values.Load(mk)
 	}
 
-	if d.m[bucket] == nil {
+	if !ok {
 		return 0, nil
 	}
 
-	return d.m[bucket][key], nil
+	return val.(int), nil
 }
 
 // Set sets the current value of key to val. It returns an error if the database is
 // closed or readonly.
 func (d *DB) Set(bucket, key string, val int) error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	return d.setLocked(bucket, key, val)
-}
-
-// Inc increases the value for the given key by the given delta. It returns an error
-// if the database is closed or readonly.
-//
-// If clamp is true, the stored value will be clamped to [0, inf)
-func (d *DB) Inc(bucket, key string, delta int, clamp bool) error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	val, err := d.getLocked(bucket, key)
-	if err != nil {
-		return err
+	mk := mapKey{
+		bucket: bucket,
+		key:    key,
 	}
 
-	val += delta
-
-	if clamp && val < 0 {
-		val = 0
-	}
-
-	return d.setLocked(bucket, key, val)
+	return d.setInternal(mk, val)
 }
 
 // Get returns the current value for the given key.
 func (d *DB) Get(bucket, key string) (int, error) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
+	mk := mapKey{
+		bucket: bucket,
+		key:    key,
+	}
 
-	return d.getLocked(bucket, key)
-}
-
-func (d *DB) Dump() {
-	log.Printf("db: %#v\n", d.m)
+	return d.getInternal(mk)
 }

@@ -142,7 +142,6 @@ func main() {
 	doClassify := flag.String("classify", "email", "How to classify this message. If empty, no classification is done. One of [email, plain]")
 	thresholdUnsure := flag.Float64("thresholdUnsure", 0.3, "Mail with score above this value will be classified as 'unsure'")
 	thresholdSpam := flag.Float64("thresholdSpam", 0.7, "Mail with score above this value will be classified as 'spam'")
-	doDump := flag.Bool("dump", false, "Dump the database before exiting. For debugging only.")
 
 	flag.Parse()
 
@@ -190,10 +189,6 @@ func main() {
 	db, err := db.Open(*dbPath, needWriteable)
 	if err != nil {
 		log.Fatalf("can't open database: %s", err)
-	}
-
-	if *doDump {
-		defer db.Dump()
 	}
 
 	defer db.Close()
