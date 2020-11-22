@@ -6,11 +6,11 @@
 package db
 
 import (
-	"encoding/gob"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"hash/fnv"
-	"io/ioutil"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -41,11 +41,9 @@ type DB struct {
 
 	sg singleflight.Group
 
-	dirty sync.Map // Maps mapKey to bool, indicating "dirty" values
-
-	values sync.Map // Maps mapKey to integer values
-
 	mu     sync.Mutex
+	values map[mapKey]int  // Maps mapKey to integer values, used as a cache
+	deltas map[mapKey]int  // Stores deltas to values, persisted upon close
 	loaded map[string]bool // identifies already loaded partial maps, to prevent needless reloads
 }
 
@@ -61,6 +59,9 @@ func Open(path string, writeable bool) (db *DB, err error) {
 	db = &DB{
 		path:      fullPath,
 		writeable: writeable,
+
+		values: make(map[mapKey]int),
+		deltas: make(map[mapKey]int),
 
 		loaded: make(map[string]bool),
 	}
@@ -107,6 +108,9 @@ func (d *DB) getID(key string) int {
 
 // Close persists the data in d and closes the database.
 func (d *DB) Close() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
 	defer func() {
 		if d.writeable {
 			d.lockFH.Close()
@@ -118,16 +122,7 @@ func (d *DB) Close() error {
 	// Collect partial maps
 	partials := make(map[string]map[string]int)
 
-	d.values.Range(func(k, v interface{}) bool {
-		mk := k.(mapKey)
-		value := v.(int)
-
-		dirtyVal, ok := d.dirty.Load(mk)
-
-		if !ok || !dirtyVal.(bool) {
-			return true
-		}
-
+	for mk, value := range d.deltas {
 		p := mk.bucket + "-" + strconv.Itoa(d.getID(mk.key))
 
 		if partials[p] == nil {
@@ -135,9 +130,7 @@ func (d *DB) Close() error {
 		}
 
 		partials[p][mk.key] = value
-
-		return true
-	})
+	}
 
 	// Write out partial maps
 	var eg errgroup.Group
@@ -147,21 +140,18 @@ func (d *DB) Close() error {
 		m := m
 
 		eg.Go(func() error {
-			tempFH, err := ioutil.TempFile(d.path, p)
-			if err != nil {
-				return fmt.Errorf("creating temporary file for %q: %w", p, err)
-			}
-			defer tempFH.Close()
+			fp := filepath.Join(d.path, p)
 
-			enc := gob.NewEncoder(tempFH)
+			fh, err := os.OpenFile(fp, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0600)
+			if err != nil {
+				return fmt.Errorf("opening partial file %q: %w", p, err)
+			}
+			defer fh.Close()
+
+			enc := json.NewEncoder(fh)
 			err = enc.Encode(m)
 			if err != nil {
 				return fmt.Errorf("encoding %q: %w", p, err)
-			}
-
-			err = os.Rename(tempFH.Name(), filepath.Join(d.path, p))
-			if err != nil {
-				return fmt.Errorf("updating %q: %w", p, err)
 			}
 
 			return nil
@@ -176,34 +166,14 @@ func (d *DB) Close() error {
 	return nil
 }
 
-func (d *DB) setInternal(mk mapKey, val int) error {
-	if d.closed {
-		return ErrClosed
-	}
-
-	if !d.writeable {
-		return ErrReadonly
-	}
-
-	if val == 0 {
-		d.values.Delete(mk)
-	} else {
-		d.values.Store(mk, val)
-	}
-
-	d.dirty.Store(mk, true)
-
-	return nil
-}
-
 func (d *DB) load(mk mapKey) error {
 	p := filepath.Join(d.path, mk.bucket+"-"+strconv.Itoa(d.getID(mk.key)))
 
-	d.mu.Lock()
 	if d.loaded[p] {
-		d.mu.Unlock()
 		return nil
 	}
+
+	// we enter here locked, so unlock while doing work
 	d.mu.Unlock()
 
 	mVal, err, _ := d.sg.Do(p, func() (interface{}, error) {
@@ -217,12 +187,33 @@ func (d *DB) load(mk mapKey) error {
 		}
 		defer fh.Close()
 
-		var m map[string]int
+		dec := json.NewDecoder(fh)
+		res := make(map[string]int)
 
-		dec := gob.NewDecoder(fh)
-		err = dec.Decode(&m)
-		return m, err
+		for {
+			var m map[string]int
+
+			err = dec.Decode(&m)
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			if err != nil {
+				return nil, err
+			}
+
+			for k, v := range m {
+				res[k] += v
+				if res[k] < 0 {
+					res[k] = 0
+				}
+			}
+		}
+
+		return res, nil
 	})
+
+	// Restore lock state
+	d.mu.Lock()
 
 	if err != nil {
 		return err
@@ -230,52 +221,86 @@ func (d *DB) load(mk mapKey) error {
 
 	m := mVal.(map[string]int)
 
-	d.mu.Lock()
 	d.loaded[p] = true
-	d.mu.Unlock()
 
 	for k, v := range m {
 		mk.key = k
 
-		d.values.Store(mk, v)
+		d.values[mk] = v
 	}
 
 	return nil
 }
 
+func (d *DB) incInternal(mk mapKey, delta int) error {
+	if d.closed {
+		return ErrClosed
+	}
+
+	if !d.writeable {
+		return ErrReadonly
+	}
+
+	current, ok := d.values[mk]
+	if !ok {
+		// Try loading
+		err := d.load(mk)
+		if err != nil {
+			return err
+		}
+
+		current = d.values[mk]
+	}
+
+	d.values[mk] = current + delta
+
+	// Clamp value to [0, inf)
+	if d.values[mk] < 0 {
+		d.values[mk] = 0
+	}
+
+	d.deltas[mk] += delta
+
+	return nil
+}
+
 func (d *DB) getInternal(mk mapKey) (int, error) {
-	val, ok := d.values.Load(mk)
+	val, ok := d.values[mk]
 	if !ok {
 		// Not found. Let's try faulting it in.
-		// TODO: have d.load return a value indicating whether we need to re-load.
 		err := d.load(mk)
 		if err != nil {
 			return 0, err
 		}
 
-		val, ok = d.values.Load(mk)
+		val = d.values[mk]
 	}
 
-	if !ok {
-		return 0, nil
+	if val < 0 {
+		panic("underflow!")
 	}
 
-	return val.(int), nil
+	return val, nil
 }
 
-// Set sets the current value of key to val. It returns an error if the database is
-// closed or readonly.
-func (d *DB) Set(bucket, key string, val int) error {
+// Inc increases the given counter by the given delta. The value stored will be clamped to [0, inf).
+func (d *DB) Inc(bucket, key string, delta int) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
 	mk := mapKey{
 		bucket: bucket,
 		key:    key,
 	}
 
-	return d.setInternal(mk, val)
+	return d.incInternal(mk, delta)
 }
 
 // Get returns the current value for the given key.
 func (d *DB) Get(bucket, key string) (int, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
 	mk := mapKey{
 		bucket: bucket,
 		key:    key,
