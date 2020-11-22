@@ -197,9 +197,8 @@ func (d *DB) setInternal(mk mapKey, val int) error {
 }
 
 func (d *DB) load(mk mapKey) error {
-	// Unlock the db while we're fiddling around with files so that other goroutines can do some useful
-	// work while we're loading stuff.
 	p := filepath.Join(d.path, mk.bucket+"-"+strconv.Itoa(d.getID(mk.key)))
+
 	d.mu.Lock()
 	if d.loaded[p] {
 		d.mu.Unlock()
