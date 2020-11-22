@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"io"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -190,6 +191,7 @@ func (d *DB) load(mk mapKey) error {
 		dec := json.NewDecoder(fh)
 		res := make(map[string]int)
 
+		numChunks := 0
 		for {
 			var m map[string]int
 
@@ -206,6 +208,29 @@ func (d *DB) load(mk mapKey) error {
 				if res[k] < 0 {
 					res[k] = 0
 				}
+			}
+
+			numChunks++
+		}
+
+		// Rewrite partial so that we have a single large chunk
+		if numChunks > 1 {
+			tempFH, err := ioutil.TempFile(d.path, "")
+			if err != nil {
+				return nil, err
+			}
+			defer tempFH.Close()
+
+			enc := json.NewEncoder(tempFH)
+
+			err = enc.Encode(res)
+			if err != nil {
+				return nil, err
+			}
+
+			err = os.Rename(tempFH.Name(), p)
+			if err != nil {
+				return nil, err
 			}
 		}
 
