@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"log"
 	"math"
 	"unicode"
 	"unicode/utf8"
@@ -65,6 +66,11 @@ func (w Word) SpamLikelihood() float64 {
 
 	if math.IsNaN(score) {
 		panic(fmt.Sprintf("nan score for %v", w))
+	}
+
+	if score < 0 || score > 1 {
+		log.Printf("possibly corrupt database: score for {%q, %d, %d}: %f", w.Text, w.Total, w.Spam, score)
+		score = 0.5
 	}
 
 	return score
