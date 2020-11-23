@@ -7,6 +7,16 @@ import (
 	"testing"
 )
 
+type Fataler interface {
+	Fatal(...interface{})
+}
+
+func expectNoError(t Fataler, err error) {
+	if err != nil {
+		t.Fatal("unexpected error:", err)
+	}
+}
+
 func TestDB_Open(t *testing.T) {
 	os.RemoveAll("test.db")
 
@@ -27,10 +37,7 @@ func TestDB_Open(t *testing.T) {
 			if err != nil {
 				t.Error("unexpected error during open:", err)
 			} else {
-				err := db.Close()
-				if err != nil {
-					t.Error("unexpected error during close:", err)
-				}
+				expectNoError(t, db.Close())
 			}
 		})
 	}
@@ -40,41 +47,27 @@ func TestDB_SetGet(t *testing.T) {
 	os.RemoveAll("test.db")
 
 	db, err := Open("test.db", true)
-	if err != nil {
-		t.Fatal("unexpected error:", err)
-	}
+	expectNoError(t, err)
 
 	want := 234
 
-	err = db.Inc("test", "foo", want)
-	if err != nil {
-		t.Error("unexpected error:", err)
-	}
+	expectNoError(t, db.Inc("test", "foo", want))
 
 	got, err := db.Get("test", "foo")
-	if err != nil {
-		t.Fatalf("unexpected error: %s", err)
-	}
+	expectNoError(t, err)
 
 	if want != got {
 		t.Errorf("unexpected value, want %d, got %d", want, got)
 	}
 
 	// Reopen db as readonly, assert that the value is still correct
-	err = db.Close()
-	if err != nil {
-		t.Fatal("unexpected error:", err)
-	}
+	expectNoError(t, db.Close())
 
 	db, err = Open("test.db", false)
-	if err != nil {
-		t.Fatal("unexpected error:", err)
-	}
+	expectNoError(t, err)
 
 	got, err = db.Get("test", "foo")
-	if err != nil {
-		t.Fatalf("unexpected error: %s", err)
-	}
+	expectNoError(t, err)
 
 	if want != got {
 		t.Errorf("unexpected value, want %d, got %d", want, got)
@@ -86,10 +79,7 @@ func TestDB_SetGet(t *testing.T) {
 		t.Errorf("expected readonly error, got %v", err)
 	}
 
-	err = db.Close()
-	if err != nil {
-		t.Fatal("unexpected error:", err)
-	}
+	expectNoError(t, db.Close())
 
 	// Attempt to write something to the closed db, assert that it fails
 	err = db.Inc("test", "foo", 1234)
@@ -102,35 +92,23 @@ func TestDB_ManyGetSet(t *testing.T) {
 	os.RemoveAll("test.db")
 
 	db, err := Open("test.db", true)
-	if err != nil {
-		t.Fatal("unexpected error:", err)
-	}
+	expectNoError(t, err)
 
 	const howMany = 1e5
 
 	for i := 0; i < howMany; i++ {
-		err = db.Inc("test", strconv.Itoa(i), i)
-		if err != nil {
-			t.Error("unexpected error:", err)
-		}
+		expectNoError(t, db.Inc("test", strconv.Itoa(i), i))
 	}
 
-	err = db.Close()
-	if err != nil {
-		t.Fatal("unexpected error:", err)
-	}
+	expectNoError(t, db.Close())
 
 	db, err = Open("test.db", false)
-	if err != nil {
-		t.Fatal("unexpected error:", err)
-	}
+	expectNoError(t, err)
 	defer db.Close()
 
 	for i := 0; i < howMany; i++ {
 		got, err := db.Get("test", strconv.Itoa(i))
-		if err != nil {
-			t.Error("unexpected error:", err)
-		}
+		expectNoError(t, err)
 
 		if i != got {
 			t.Fatalf("unexpected value. want %d, got %d", i, got)
@@ -141,23 +119,16 @@ func TestDB_ManyGetSet(t *testing.T) {
 func TestDB_Clamp(t *testing.T) {
 	incTest := func(db *DB, delta int, expect int) {
 		now, err := db.Get("test", "counter")
-		if err != nil {
-			t.Fatal("unexpected error:", err)
-		}
+		expectNoError(t, err)
 
 		if now < 0 {
 			t.Errorf("got value outside of [0, inf): %d", now)
 		}
 
-		err = db.Inc("test", "counter", delta)
-		if err != nil {
-			t.Fatal("unexpected error:", err)
-		}
+		expectNoError(t, db.Inc("test", "counter", delta))
 
 		now, err = db.Get("test", "counter")
-		if err != nil {
-			t.Fatal("unexpected error:", err)
-		}
+		expectNoError(t, err)
 
 		if now < 0 {
 			t.Errorf("got value outside of [0, inf): %d", now)
@@ -171,9 +142,7 @@ func TestDB_Clamp(t *testing.T) {
 	os.RemoveAll("test.db")
 
 	db, err := Open("test.db", true)
-	if err != nil {
-		t.Fatal("unexpected error:", err)
-	}
+	expectNoError(t, err)
 
 	incTest(db, 10, 10)
 	incTest(db, -10, 0)
@@ -181,15 +150,10 @@ func TestDB_Clamp(t *testing.T) {
 	incTest(db, 100, 100)
 	incTest(db, -1000, 0)
 
-	err = db.Close()
-	if err != nil {
-		t.Fatal("unexpected error:", err)
-	}
+	expectNoError(t, db.Close())
 
 	db, err = Open("test.db", true)
-	if err != nil {
-		t.Fatal("unexpected error:", err)
-	}
+	expectNoError(t, err)
 	defer db.Close()
 
 	incTest(db, 10, 10)
@@ -211,46 +175,29 @@ func TestDB_SequentialModify(t *testing.T) {
 
 	for i := 0; i < wantIterations; i++ {
 		db, err := Open("test.db", true)
-		if err != nil {
-			t.Fatal("unexpected error:", err)
-		}
+		expectNoError(t, err)
 
-		err = db.Inc("test", "counter", 1)
-		if err != nil {
-			t.Fatal("unexpected error:", err)
-		}
+		expectNoError(t, db.Inc("test", "counter", 1))
 
 		now, err := db.Get("test", "counter")
-		if err != nil {
-			t.Fatal("unexpected error:", err)
-		}
+		expectNoError(t, err)
 
 		want := i + 1
 		if want != now {
 			t.Errorf("unexpected counter: want %d, have %d", want, now)
 		}
 
-		err = db.Close()
-		if err != nil {
-			t.Fatal("unexpected error:", err)
-		}
+		expectNoError(t, db.Close())
 	}
 
 	db, err := Open("test.db", false)
-	if err != nil {
-		t.Fatal("unexpected error:", err)
-	}
+	expectNoError(t, err)
 	defer func() {
-		err := db.Close()
-		if err != nil {
-			t.Fatal("unexpected error:", err)
-		}
+		expectNoError(t, db.Close())
 	}()
 
 	now, err := db.Get("test", "counter")
-	if err != nil {
-		t.Fatal("unexpected error:", err)
-	}
+	expectNoError(t, err)
 
 	if wantIterations != now {
 		t.Errorf("unexpected count: want %d, have %d", wantIterations, now)
@@ -263,47 +210,39 @@ func BenchmarkLoadStore(b *testing.B) {
 	os.RemoveAll("test.db")
 
 	db, err := Open("test.db", true)
-	if err != nil {
-		b.Fatal("unexpected error:", err)
-	}
+	expectNoError(b, err)
 
 	for i := 0; i < howMany; i++ {
-		db.Inc("test", strconv.Itoa(i), i+1)
+		expectNoError(b, db.Inc("test", strconv.Itoa(i), i+1))
 	}
 
-	db.Close()
+	expectNoError(b, db.Close())
 
 	b.ResetTimer()
 
 	for it := 0; it < b.N; it++ {
 		db, err := Open("test.db", true)
-		if err != nil {
-			b.Fatal("unexpected error:", err)
-		}
+		expectNoError(b, err)
 
 		for i := 0; i < howMany; i++ {
-			db.Inc("test", strconv.Itoa(i), i+1)
+			expectNoError(b, db.Inc("test", strconv.Itoa(i), i+1))
 		}
 
-		db.Close()
+		expectNoError(b, db.Close())
 
 		// Re-open DB readonly
 		db, err = Open("test.db", false)
-		if err != nil {
-			b.Fatal("unexpected error:", err)
-		}
+		expectNoError(b, err)
 
 		for i := 0; i < howMany; i += 2 {
 			v, err := db.Get("test", strconv.Itoa(i))
-			if err != nil {
-				b.Fatalf("unexpected error for %d: %s", i, err)
-			}
+			expectNoError(b, err)
 
 			if v == 0 {
 				b.Fatalf("unexpected zero for %d", i)
 			}
 		}
 
-		db.Close()
+		expectNoError(b, db.Close())
 	}
 }
