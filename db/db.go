@@ -284,10 +284,7 @@ func (d *DB) getInternal(mk mapKey) (int, error) {
 		return 0, err
 	}
 
-	val, _ := d.values[mk]
-
-	val += d.deltas[mk]
-
+	val := d.values[mk] + d.deltas[mk]
 	if val < 0 {
 		val = 0
 	}
