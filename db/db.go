@@ -213,6 +213,12 @@ func (d *DB) load(mk mapKey) error {
 			numChunks++
 		}
 
+		for k, v := range res {
+			if v == 0 {
+				delete(res, k)
+			}
+		}
+
 		// Rewrite partial so that we have a single large chunk
 		if numChunks > 1 {
 			tempFH, err := ioutil.TempFile(d.path, "")
@@ -266,43 +272,24 @@ func (d *DB) incInternal(mk mapKey, delta int) error {
 		return ErrReadonly
 	}
 
-	current, ok := d.values[mk]
-	if !ok {
-		// Try loading
-		err := d.load(mk)
-		if err != nil {
-			return err
-		}
-
-		current = d.values[mk]
-	}
-
-	d.values[mk] = current + delta
-
-	// Clamp value to [0, inf)
-	if d.values[mk] < 0 {
-		d.values[mk] = 0
-	}
-
 	d.deltas[mk] += delta
 
 	return nil
 }
 
 func (d *DB) getInternal(mk mapKey) (int, error) {
-	val, ok := d.values[mk]
-	if !ok {
-		// Not found. Let's try faulting it in.
-		err := d.load(mk)
-		if err != nil {
-			return 0, err
-		}
-
-		val = d.values[mk]
+	// Not found. Let's try faulting it in.
+	err := d.load(mk)
+	if err != nil {
+		return 0, err
 	}
 
+	val, _ := d.values[mk]
+
+	val += d.deltas[mk]
+
 	if val < 0 {
-		panic("underflow!")
+		val = 0
 	}
 
 	return val, nil

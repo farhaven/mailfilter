@@ -117,25 +117,21 @@ func TestDB_ManyGetSet(t *testing.T) {
 }
 
 func TestDB_Clamp(t *testing.T) {
-	incTest := func(db *DB, delta int, expect int) {
-		now, err := db.Get("test", "counter")
+	incTest := func(db *DB, delta int) {
+		before, err := db.Get("test", "counter")
 		expectNoError(t, err)
 
-		if now < 0 {
-			t.Errorf("got value outside of [0, inf): %d", now)
+		if before < 0 {
+			t.Errorf("got value outside of [0, inf): %d", before)
 		}
 
 		expectNoError(t, db.Inc("test", "counter", delta))
 
-		now, err = db.Get("test", "counter")
+		after, err := db.Get("test", "counter")
 		expectNoError(t, err)
 
-		if now < 0 {
-			t.Errorf("got value outside of [0, inf): %d", now)
-		}
-
-		if expect != now {
-			t.Errorf("unexpected value: want %d, have %d", expect, now)
+		if after < 0 {
+			t.Errorf("got value outside of [0, inf): %d", before)
 		}
 	}
 
@@ -144,11 +140,11 @@ func TestDB_Clamp(t *testing.T) {
 	db, err := Open("test.db", true)
 	expectNoError(t, err)
 
-	incTest(db, 10, 10)
-	incTest(db, -10, 0)
-	incTest(db, -10, 0)
-	incTest(db, 100, 100)
-	incTest(db, -1000, 0)
+	incTest(db, 10)
+	incTest(db, -10)
+	incTest(db, -10)
+	incTest(db, 101)
+	incTest(db, -1000)
 
 	expectNoError(t, db.Close())
 
@@ -156,11 +152,11 @@ func TestDB_Clamp(t *testing.T) {
 	expectNoError(t, err)
 	defer db.Close()
 
-	incTest(db, 10, 10)
-	incTest(db, -10, 0)
-	incTest(db, -10, 0)
-	incTest(db, 100, 100)
-	incTest(db, -1000, 0)
+	incTest(db, 10)
+	incTest(db, -10)
+	incTest(db, -10)
+	incTest(db, 100)
+	incTest(db, -1000)
 }
 
 func TestDB_SequentialModify(t *testing.T) {
@@ -205,7 +201,7 @@ func TestDB_SequentialModify(t *testing.T) {
 }
 
 func BenchmarkLoadStore(b *testing.B) {
-	const howMany = 1e6
+	const howMany = 1e5
 
 	os.RemoveAll("test.db")
 
@@ -241,6 +237,25 @@ func BenchmarkLoadStore(b *testing.B) {
 			if v == 0 {
 				b.Fatalf("unexpected zero for %d", i)
 			}
+		}
+
+		expectNoError(b, db.Close())
+	}
+}
+
+func BenchmarkUpdate(b *testing.B) {
+	const howMany = 1e5
+
+	os.RemoveAll("test.db")
+
+	b.ResetTimer()
+
+	for it := 0; it < b.N; it++ {
+		db, err := Open("test.db", true)
+		expectNoError(b, err)
+
+		for c := 0; c < howMany; c++ {
+			expectNoError(b, db.Inc("test", "bench-"+strconv.Itoa(c), 1))
 		}
 
 		expectNoError(b, db.Close())
