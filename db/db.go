@@ -278,7 +278,6 @@ func (d *DB) incInternal(mk mapKey, delta int) error {
 }
 
 func (d *DB) getInternal(mk mapKey) (int, error) {
-	// Not found. Let's try faulting it in.
 	err := d.load(mk)
 	if err != nil {
 		return 0, err
