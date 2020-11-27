@@ -147,16 +147,16 @@ func main() {
 
 	defer log.Println("done")
 
-	go func() {
-		log.Println("starting profiling server on", *profilingAddr)
-		err := http.ListenAndServe(*profilingAddr, nil)
-		if err != nil {
-			log.Printf("can't start profiling server on %s: %s", *profilingAddr, err)
-		}
-	}()
-
 	if *profilingAddr == "" {
 		defer profile.Start(profile.ProfilePath("/tmp")).Stop()
+	} else {
+		go func() {
+			log.Println("starting profiling server on", *profilingAddr)
+			err := http.ListenAndServe(*profilingAddr, nil)
+			if err != nil {
+				log.Printf("can't start profiling server on %s: %s", *profilingAddr, err)
+			}
+		}()
 	}
 
 	switch *doTrain {
