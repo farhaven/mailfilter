@@ -26,6 +26,8 @@ var (
 	ErrClosed   = errors.New("closed database")
 )
 
+const numChunks = 128
+
 type mapKey struct {
 	bucket string
 	key    string
@@ -94,8 +96,6 @@ func Open(path string, writeable bool) (db *DB, err error) {
 }
 
 func (d *DB) getID(key string) int {
-	const numChunks = 32
-
 	h := fnv.New32()
 
 	_, err := h.Write([]byte(key))
