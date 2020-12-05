@@ -19,6 +19,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"runtime"
+	"time"
 
 	"github.com/pkg/errors"
 	"github.com/pkg/profile"
@@ -145,7 +146,11 @@ func main() {
 
 	flag.Parse()
 
-	defer log.Println("done")
+	startTime := time.Now()
+
+	defer func() {
+		log.Println("done in", time.Since(startTime))
+	}()
 
 	if *profilingAddr == "" {
 		defer profile.Start(profile.ProfilePath("/tmp")).Stop()
