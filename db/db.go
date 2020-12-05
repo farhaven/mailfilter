@@ -6,17 +6,16 @@
 package db
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"hash/fnv"
-	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strconv"
 	"sync"
 
+	jsoniterator "github.com/json-iterator/go"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 	"golang.org/x/sys/unix"
@@ -149,7 +148,7 @@ func (d *DB) Close() error {
 			}
 			defer fh.Close()
 
-			enc := json.NewEncoder(fh)
+			enc := jsoniterator.NewEncoder(fh)
 			err = enc.Encode(m)
 			if err != nil {
 				return fmt.Errorf("encoding %q: %w", p, err)
@@ -188,17 +187,14 @@ func (d *DB) load(mk mapKey) error {
 		}
 		defer fh.Close()
 
-		dec := json.NewDecoder(fh)
+		dec := jsoniterator.NewDecoder(fh)
 		res := make(map[string]int)
 
 		numChunks := 0
-		for {
+		for dec.More() {
 			var m map[string]int
 
 			err = dec.Decode(&m)
-			if errors.Is(err, io.EOF) {
-				break
-			}
 			if err != nil {
 				return nil, err
 			}
@@ -227,7 +223,7 @@ func (d *DB) load(mk mapKey) error {
 			}
 			defer tempFH.Close()
 
-			enc := json.NewEncoder(tempFH)
+			enc := jsoniterator.NewEncoder(tempFH)
 
 			err = enc.Encode(res)
 			if err != nil {
