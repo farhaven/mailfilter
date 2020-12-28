@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"io/ioutil"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -26,7 +27,10 @@ var (
 	ErrClosed   = errors.New("closed database")
 )
 
-const numChunks = 128
+const (
+	numChunks = 128
+	mapSize   = 8192
+)
 
 type mapKey struct {
 	bucket string
@@ -62,10 +66,10 @@ func Open(path string, writeable bool) (db *DB, err error) {
 		path:      fullPath,
 		writeable: writeable,
 
-		values: make(map[mapKey]int),
-		deltas: make(map[mapKey]int),
+		values: make(map[mapKey]int, mapSize),
+		deltas: make(map[mapKey]int, mapSize),
 
-		loaded: make(map[string]bool),
+		loaded: make(map[string]bool, numChunks),
 	}
 
 	if writeable {
@@ -120,13 +124,13 @@ func (d *DB) Close() error {
 	}()
 
 	// Collect partial maps
-	partials := make(map[string]map[string]int)
+	partials := make(map[string]map[string]int, numChunks)
 
 	for mk, value := range d.deltas {
 		p := mk.bucket + "-" + strconv.Itoa(d.getID(mk.key))
 
 		if partials[p] == nil {
-			partials[p] = make(map[string]int)
+			partials[p] = make(map[string]int, mapSize)
 		}
 
 		partials[p][mk.key] = value
@@ -166,6 +170,10 @@ func (d *DB) Close() error {
 	return nil
 }
 
+func (d *DB) LogStats() {
+	log.Println(len(d.values), "entries and", len(d.deltas), "deltas")
+}
+
 func (d *DB) load(mk mapKey) error {
 	p := filepath.Join(d.path, mk.bucket+"-"+strconv.Itoa(d.getID(mk.key)))
 
@@ -180,7 +188,7 @@ func (d *DB) load(mk mapKey) error {
 		fh, err := os.Open(p)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
-				return make(map[string]int), nil
+				return make(map[string]int, mapSize), nil
 			}
 
 			return nil, err
@@ -188,7 +196,7 @@ func (d *DB) load(mk mapKey) error {
 		defer fh.Close()
 
 		dec := jsoniterator.NewDecoder(fh)
-		res := make(map[string]int)
+		res := make(map[string]int, mapSize)
 
 		numChunks := 0
 		for dec.More() {

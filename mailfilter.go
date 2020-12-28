@@ -195,7 +195,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("can't open database: %s", err)
 	}
-
+	defer db.LogStats()
 	defer db.Close()
 
 	log.Println("database open, writeable:", needWriteable)
