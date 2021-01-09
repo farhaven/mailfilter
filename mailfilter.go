@@ -19,17 +19,21 @@ import (
 	"os/user"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"time"
 
 	"github.com/pkg/errors"
-	"github.com/pkg/profile"
 
 	"mailfilter/db"
 )
 
+type SpamFilter struct {
+	c *Classifier
+}
+
 // train reads text from in and trains the given classifier to recognize
 // the text as ham or spam, depending on the spam flag.
-func train(in io.Reader, c Classifier, spam bool, learnFactor int) error {
+func (s *SpamFilter) train(in io.Reader, spam bool, learnFactor int) error {
 	words := make(chan string, 8192)
 
 	go func() {
@@ -45,10 +49,57 @@ func train(in io.Reader, c Classifier, spam bool, learnFactor int) error {
 	}()
 
 	for word := range words {
-		c.Train(word, spam, learnFactor)
+		s.c.Train(word, spam, learnFactor)
 	}
 
 	return nil
+}
+
+func (s *SpamFilter) trainingHandler(w http.ResponseWriter, r *http.Request) {
+	// Params:
+	// - learn as: spam/ham
+	// - learn factor: int, how hard to learn
+	// Read from r.Body, train, persist after training
+
+	defer r.Body.Close()
+
+	defer func() {
+		log.Println("training done, persisting")
+
+		err := s.c.Persist()
+		if err != nil {
+			log.Panicf("can't persist db: %s", err)
+		}
+	}()
+
+	args := r.URL.Query()
+
+	trainAs := args.Get("train")
+	if trainAs == "" {
+		trainAs = "spam"
+	}
+
+	switch trainAs {
+	case "spam", "ham":
+	default:
+		panic(trainAs) // TODO: Handle properly
+	}
+
+	learnFactorArg := args.Get("factor")
+	if learnFactorArg == "" {
+		learnFactorArg = "1"
+	}
+	learnFactor, err := strconv.Atoi(learnFactorArg)
+	if err != nil {
+		panic(err) // TODO: Handle properly
+	}
+
+	err = s.train(r.Body, trainAs == "spam", learnFactor)
+	if err != nil {
+		// TODO: Properly handle this
+		log.Fatalf("can't train message as %s: %s", trainAs, err)
+	}
+
 }
 
 type ClassifyMode int
@@ -62,21 +113,16 @@ const (
 // it as either spam or ham and writes it to out. The text is assumed to
 // be a single RRC2046-encoded message, and the verdict is added as a
 // header with the name `X-Mailfilter`.
-func classify(in io.Reader, c Classifier, out io.Writer, how ClassifyMode) error {
-	var (
-		buf bytes.Buffer
-		msg bytes.Buffer
-	)
+func (s *SpamFilter) classify(in io.Reader, out io.Writer, how ClassifyMode) error {
+	var msg bytes.Buffer
 
-	_, err := io.Copy(&buf, io.TeeReader(in, &msg))
-	if err != nil {
-		return errors.Wrap(err, "reading into temp. buffer")
-	}
-
-	label, err := c.Classify(&buf)
+	start := time.Now()
+	label, err := s.c.Classify(io.TeeReader(in, &msg))
 	if err != nil {
 		return errors.Wrap(err, "classifying")
 	}
+
+	log.Printf("took %s to classify message as %s", time.Since(start), label)
 
 	if how == ClassifyPlain {
 		// Just write out the verdict to the output writer
@@ -87,6 +133,8 @@ func classify(in io.Reader, c Classifier, out io.Writer, how ClassifyMode) error
 
 		return nil
 	}
+
+	log.Printf("got %d bytes: %s", msg.Len(), msg.String())
 
 	// Write back message, inserting X-Mailfilter header at the bottom of the header block
 	r := bufio.NewReader(&msg)
@@ -121,6 +169,37 @@ func classify(in io.Reader, c Classifier, out io.Writer, how ClassifyMode) error
 	return nil
 }
 
+func (s *SpamFilter) classifyHandler(w http.ResponseWriter, r *http.Request) {
+	// Params: type of classification: Plain or Email
+	// Read from r.Body, write to w
+	defer r.Body.Close()
+
+	if r.Method != http.MethodPost {
+		code := http.StatusMethodNotAllowed
+		http.Error(w, http.StatusText(code), code)
+		return
+	}
+
+	args := r.URL.Query()
+
+	var mode ClassifyMode
+	switch args.Get("mode") {
+	case "", "email":
+		mode = ClassifyEmail
+	case "plain":
+		mode = ClassifyPlain
+	default:
+		http.Error(w, fmt.Sprintf("unexpected mode %q", args.Get("mode")), http.StatusBadRequest)
+		return
+	}
+
+	err := s.classify(r.Body, w, mode)
+	if err != nil {
+		// TODO: Proper error handling
+		log.Fatalf("can't classify message: %s", err)
+	}
+}
+
 func main() {
 	runtime.SetBlockProfileRate(20)
 	runtime.SetMutexProfileFraction(20)
@@ -134,13 +213,9 @@ func main() {
 		log.Fatalf("can't get home directory of user %#v", user)
 	}
 
-	profilingAddr := flag.String("profilingAddr", "127.0.0.1:7999", "Listening address for profiling server")
+	listenAddr := flag.String("listenAddr", "127.0.0.1:7999", "Listening address for profiling server")
 	dbPath := flag.String("dbPath", filepath.Join(user.HomeDir, ".mailfilter.db"), "path to word database")
 
-	doTrain := flag.String("train", "", "How to train this message. If not provided, no training is done. One of [ham,spam] otherwise")
-	learnFactor := flag.Int("learnFactor", 1, "How 'hard' to learn the message")
-
-	doClassify := flag.String("classify", "email", "How to classify this message. If empty, no classification is done. One of [email, plain]")
 	thresholdUnsure := flag.Float64("thresholdUnsure", 0.3, "Mail with score above this value will be classified as 'unsure'")
 	thresholdSpam := flag.Float64("thresholdSpam", 0.7, "Mail with score above this value will be classified as 'spam'")
 
@@ -152,83 +227,29 @@ func main() {
 		log.Println("done in", time.Since(startTime))
 	}()
 
-	if *profilingAddr == "" {
-		defer profile.Start(profile.ProfilePath("/tmp")).Stop()
-	} else {
-		go func() {
-			log.Println("starting profiling server on", *profilingAddr)
-			err := http.ListenAndServe(*profilingAddr, nil)
-			if err != nil {
-				log.Printf("can't start profiling server on %s: %s", *profilingAddr, err)
-			}
-		}()
-	}
-
-	switch *doTrain {
-	case "", "ham", "spam":
-	default:
-		fmt.Fprintf(flag.CommandLine.Output(), "Don't know how to train %q\n\n", *doTrain)
-		flag.PrintDefaults()
-		os.Exit(1)
-	}
-
-	switch *doClassify {
-	case "", "email", "plain":
-	default:
-		fmt.Fprintf(flag.CommandLine.Output(), "Don't know how to classify %q\n\n", *doClassify)
-		flag.PrintDefaults()
-		os.Exit(1)
-	}
-
 	if *thresholdUnsure >= *thresholdSpam {
 		fmt.Fprintf(flag.CommandLine.Output(), "Threshold for 'unknown' must be lower than threshold for 'spam'\n\n")
 		flag.PrintDefaults()
 		os.Exit(1)
 	}
 
-	needWriteable := false
-	if *doTrain != "" {
-		needWriteable = true
-	}
-
-	db, err := db.Open(*dbPath, needWriteable)
+	db, err := db.Open(*dbPath, true)
 	if err != nil {
 		log.Fatalf("can't open database: %s", err)
 	}
 	defer db.LogStats()
 	defer db.Close()
 
-	log.Println("database open, writeable:", needWriteable)
-
 	c := NewClassifier(db, *thresholdUnsure, *thresholdSpam)
 
-	if *doTrain != "" {
-		defer func() {
-			log.Println("training done, persisting")
+	s := SpamFilter{c}
+	http.HandleFunc("/train", s.trainingHandler)
+	http.HandleFunc("/classify", s.classifyHandler)
 
-			err := c.Persist()
-			if err != nil {
-				log.Panicf("can't persist db: %s", err)
-			}
-		}()
-
-		err = train(os.Stdin, c, *doTrain == "spam", *learnFactor)
-		if err != nil {
-			log.Fatalf("can't train message as %s: %s", *doTrain, err)
-		}
-
-		*doClassify = ""
+	log.Println("starting http server on", *listenAddr)
+	err = http.ListenAndServe(*listenAddr, nil)
+	if err != nil {
+		log.Printf("can't start profiling server on %s: %s", *listenAddr, err)
 	}
 
-	if *doClassify != "" {
-		mode := ClassifyEmail
-		if *doClassify == "plain" {
-			mode = ClassifyPlain
-		}
-
-		err := classify(os.Stdin, c, os.Stdout, mode)
-		if err != nil {
-			log.Fatalf("can't classify message: %s", err)
-		}
-	}
 }

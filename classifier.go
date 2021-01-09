@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"math"
+	"sync"
 	"unicode"
 	"unicode/utf8"
 
@@ -86,6 +87,8 @@ type DB interface {
 }
 
 type Classifier struct {
+	mu sync.Mutex
+
 	db DB
 
 	spam  map[string]int // used during training, persisted in Close
@@ -95,8 +98,8 @@ type Classifier struct {
 	thresholdSpam   float64
 }
 
-func NewClassifier(db DB, thresholdUnsure, thresholdSpam float64) Classifier {
-	return Classifier{
+func NewClassifier(db DB, thresholdUnsure, thresholdSpam float64) *Classifier {
+	return &Classifier{
 		db: db,
 
 		spam:  make(map[string]int),
@@ -107,7 +110,10 @@ func NewClassifier(db DB, thresholdUnsure, thresholdSpam float64) Classifier {
 	}
 }
 
-func (c Classifier) Persist() error {
+func (c *Classifier) Persist() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	for word, diff := range c.total {
 		err := c.db.Inc("total", word, diff)
 		if err != nil {
@@ -126,7 +132,7 @@ func (c Classifier) Persist() error {
 
 }
 
-func (c Classifier) getWord(word string) (Word, error) {
+func (c *Classifier) getWord(word string) (Word, error) {
 	w := Word{
 		Text: word,
 	}
@@ -147,7 +153,10 @@ func (c Classifier) getWord(word string) (Word, error) {
 }
 
 // Train classifies the given word as spam or not spam, training c for future recognition.
-func (c Classifier) Train(word string, spam bool, factor int) {
+func (c *Classifier) Train(word string, spam bool, factor int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	c.total[word] += factor
 	if spam {
 		c.spam[word] += factor
@@ -178,7 +187,7 @@ func (c ClassificationResult) String() string {
 }
 
 // Classify classifies the given text and returns a label along with a "certainty" value for that label.
-func (c Classifier) Classify(text io.Reader) (ClassificationResult, error) {
+func (c *Classifier) Classify(text io.Reader) (ClassificationResult, error) {
 	scanner := bufio.NewScanner(NewFilteredReader(text))
 	scanner.Split(ScanNGram)
 
