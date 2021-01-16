@@ -24,11 +24,13 @@ import (
 
 	"github.com/pkg/errors"
 
+	"mailfilter/classifier"
 	"mailfilter/db"
+	"mailfilter/filtered"
 )
 
 type SpamFilter struct {
-	c *Classifier
+	c *classifier.Classifier
 }
 
 // train reads text from in and trains the given classifier to recognize
@@ -39,8 +41,8 @@ func (s *SpamFilter) train(in io.Reader, spam bool, learnFactor int) error {
 	go func() {
 		defer close(words)
 
-		scanner := bufio.NewScanner(NewFilteredReader(in))
-		scanner.Split(ScanNGram)
+		scanner := bufio.NewScanner(filtered.NewReader(in))
+		scanner.Split(classifier.ScanNGram)
 
 		for scanner.Scan() {
 			word := scanner.Text()
@@ -240,7 +242,7 @@ func main() {
 	defer db.LogStats()
 	defer db.Close()
 
-	c := NewClassifier(db, *thresholdUnsure, *thresholdSpam)
+	c := classifier.New(db, *thresholdUnsure, *thresholdSpam)
 
 	s := SpamFilter{c}
 	http.HandleFunc("/train", s.trainingHandler)

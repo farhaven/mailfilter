@@ -1,4 +1,4 @@
-package main
+package classifier
 
 import (
 	"bufio"
@@ -11,6 +11,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/pkg/errors"
+
+	"mailfilter/filtered"
 )
 
 func ScanNGram(data []byte, atEOF bool) (advance int, token []byte, err error) {
@@ -98,7 +100,7 @@ type Classifier struct {
 	thresholdSpam   float64
 }
 
-func NewClassifier(db DB, thresholdUnsure, thresholdSpam float64) *Classifier {
+func New(db DB, thresholdUnsure, thresholdSpam float64) *Classifier {
 	return &Classifier{
 		db: db,
 
@@ -188,7 +190,7 @@ func (c ClassificationResult) String() string {
 
 // Classify classifies the given text and returns a label along with a "certainty" value for that label.
 func (c *Classifier) Classify(text io.Reader) (ClassificationResult, error) {
-	scanner := bufio.NewScanner(NewFilteredReader(text))
+	scanner := bufio.NewScanner(filtered.NewReader(text))
 	scanner.Split(ScanNGram)
 
 	var scores []float64

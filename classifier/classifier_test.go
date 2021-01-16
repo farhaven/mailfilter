@@ -1,10 +1,11 @@
-package main
+package classifier
 
 import (
 	"bufio"
 	"bytes"
 	"fmt"
 	"mailfilter/db"
+	"mailfilter/filtered"
 	"math"
 	"os"
 	"regexp"
@@ -41,7 +42,7 @@ func TestScan(t *testing.T) {
 		t.Run(strconv.Itoa(idx), func(t *testing.T) {
 			buf := bytes.NewBufferString(tc.txt)
 
-			scanner := bufio.NewScanner(NewFilteredReader(buf))
+			scanner := bufio.NewScanner(filtered.NewReader(buf))
 			scanner.Split(ScanNGram)
 
 			wordIdx := 0
@@ -122,7 +123,7 @@ func TestClassifier_Train(t *testing.T) {
 	}
 	defer db.Close()
 
-	c := NewClassifier(db, 0.3, 0.7)
+	c := New(db, 0.3, 0.7)
 
 	for _, w := range words {
 		c.Train(w.word, w.spam, 1)
@@ -174,7 +175,7 @@ func TestClassifier(t *testing.T) {
 	}
 	defer db.Close()
 
-	c := NewClassifier(db, 0.3, 0.7)
+	c := New(db, 0.3, 0.7)
 
 	for _, w := range words {
 		c.Train(w.word, w.spam, 1)

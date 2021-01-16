@@ -1,4 +1,4 @@
-package main
+package filtered
 
 import (
 	"bytes"
@@ -8,17 +8,17 @@ import (
 	"unicode/utf8"
 )
 
-type FilteredReaderState int
+type ReaderState int
 
 const (
-	StateNormal FilteredReaderState = iota
+	StateNormal ReaderState = iota
 	StatePunct
 	StateNumber
 	StateSeparator
 	StateError
 )
 
-func (fs FilteredReaderState) String() string {
+func (fs ReaderState) String() string {
 	switch fs {
 	case StateNormal:
 		return "Normal"
@@ -35,25 +35,25 @@ func (fs FilteredReaderState) String() string {
 	}
 }
 
-type FilteredReader struct {
+type Reader struct {
 	r io.Reader
-	s FilteredReaderState
+	s ReaderState
 }
 
-func NewFilteredReader(r io.Reader) *FilteredReader {
-	return &FilteredReader{
+func NewReader(r io.Reader) *Reader {
+	return &Reader{
 		r: r,
 		s: StateNormal,
 	}
 }
 
-func (fr *FilteredReader) step(next FilteredReaderState) bool {
+func (fr *Reader) step(next ReaderState) bool {
 	rv := fr.s == next
 	fr.s = next
 	return rv
 }
 
-func (fr *FilteredReader) Read(data []byte) (int, error) {
+func (fr *Reader) Read(data []byte) (int, error) {
 	n, err := fr.r.Read(data)
 	if err != nil {
 		return 0, err
