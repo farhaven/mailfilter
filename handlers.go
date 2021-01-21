@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"time"
 )
 
 func (s *SpamFilter) trainingHandler(w http.ResponseWriter, r *http.Request) {
@@ -51,12 +52,16 @@ func (s *SpamFilter) trainingHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
+	start := time.Now()
+	log.Println("factor:", learnFactor, "trainAs:", trainAs)
+
 	err = s.train(r.Body, trainAs == "spam", learnFactor)
 	if err != nil {
 		// TODO: Properly handle this
 		log.Fatalf("can't train message as %s: %s", trainAs, err)
 	}
 
+	fmt.Fprintln(w, "took", time.Since(start).String(), "to train as", trainAs, "with factor", learnFactor)
 }
 
 func (s *SpamFilter) classifyHandler(w http.ResponseWriter, r *http.Request) {
