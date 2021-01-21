@@ -2,6 +2,7 @@ package filtered
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"strconv"
 	"unicode"
@@ -54,9 +55,15 @@ func (fr *Reader) step(next ReaderState) bool {
 }
 
 func (fr *Reader) Read(data []byte) (int, error) {
+	isEOF := false
+
 	n, err := fr.r.Read(data)
 	if err != nil {
-		return 0, err
+		if errors.Is(err, io.EOF) {
+			isEOF = true
+		} else {
+			return 0, err
+		}
 	}
 
 	lowercase := bytes.ToLower(data[:n])
@@ -106,6 +113,10 @@ func (fr *Reader) Read(data []byte) (int, error) {
 		}
 
 		writeIdx++
+	}
+
+	if isEOF {
+		return writeIdx, io.EOF
 	}
 
 	return writeIdx, nil
