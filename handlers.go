@@ -83,3 +83,7 @@ func (s *SpamFilter) classifyHandler(w http.ResponseWriter, r *http.Request) {
 		log.Fatalf("can't classify message: %s", err)
 	}
 }
+
+func (s *SpamFilter) handleIndex(w http.ResponseWriter, r *http.Request) {
+	// TODO: Just expose Swagger endpoint
+}

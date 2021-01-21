@@ -168,6 +168,7 @@ func main() {
 	c := classifier.New(db, *thresholdUnsure, *thresholdSpam)
 
 	s := SpamFilter{c}
+	http.HandleFunc("/", s.handleIndex)
 	http.HandleFunc("/train", s.trainingHandler)
 	http.HandleFunc("/classify", s.classifyHandler)
 
