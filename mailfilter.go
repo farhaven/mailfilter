@@ -177,5 +177,4 @@ func main() {
 	if err != nil {
 		log.Printf("can't start profiling server on %s: %s", *listenAddr, err)
 	}
-
 }
