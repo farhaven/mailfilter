@@ -57,8 +57,10 @@ func (s *SpamFilter) trainingHandler(w http.ResponseWriter, r *http.Request) {
 
 	err = s.train(r.Body, trainAs == "spam", learnFactor)
 	if err != nil {
-		// TODO: Properly handle this
-		log.Fatalf("can't train message as %s: %s", trainAs, err)
+		log.Println("can't train message as %s: %s", trainAs, err)
+		code := http.StatusInternalServerError
+		http.Error(w, http.StatusText(code)+": "+err.Error(), code)
+		return
 	}
 
 	fmt.Fprintln(w, "took", time.Since(start).String(), "to train as", trainAs, "with factor", learnFactor)
@@ -90,8 +92,10 @@ func (s *SpamFilter) classifyHandler(w http.ResponseWriter, r *http.Request) {
 
 	err := s.classify(r.Body, w, mode)
 	if err != nil {
-		// TODO: Proper error handling
-		log.Fatalf("can't classify message: %s", err)
+		log.Println("can't classify message:", err)
+		code := http.StatusInternalServerError
+		http.Error(w, http.StatusText(code)+": "+err.Error(), code)
+		return
 	}
 }
 
