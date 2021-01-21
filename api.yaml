@@ -1,0 +1,68 @@
+swagger: "2.0"
+info:
+  description: "This is an API that can be used to classify email messages as ham or spam."
+  version: "0.1.0"
+  title: "Mailfilter"
+  contact:
+    email: "gbe@unobtanium.de"
+  license:
+    name: "ISC"
+    url: "https://www.isc.org/licenses/"
+host: "localhost:7999"
+basePath: "/"
+schemes:
+- "http"
+paths:
+  /train:
+    post:
+      tags: ["message handling"]
+      summary: "Train a message as ham or spam"
+      description: ""
+      operationId: "train"
+      consumes:
+      - "TODO"
+      produces:
+      - "TODO"
+      parameters:
+      - in: "query"
+        name: "train"
+        description: "The classification target for this message"
+        required: true
+        type: "string"
+        enum:
+          - "ham"
+          - "spam"
+      - in: "query"
+        name: "learnFactor"
+        description: "How 'hard' to learn this message"
+        type: "integer"
+        default: 1
+      responses:
+        "200":
+          description: "The input was trained as the specified target"
+        "405":
+          description: "Invalid input"
+  /classify:
+    post:
+      tags: ["message handling"]
+      summary: "Classify a messages"
+      operationId: "classify"
+      consumes:
+      - "TODO"
+      produces:
+      - "TODO"
+      parameters:
+      - in: "query"
+        name: "mode"
+        description: "Classification mode"
+        required: false
+        type: "string"
+        enum:
+          - "email"
+          - "plain"
+        default: "email"
+      responses:
+        "200":
+          description: "Message was classified successfully"
+        "405":
+          description: "Invalid request"
