@@ -88,7 +88,7 @@ func (s *SpamFilter) classify(in io.Reader, out io.Writer, how ClassifyMode) err
 		return nil
 	}
 
-	log.Printf("got %d bytes: %s", msg.Len(), msg.String())
+	log.Printf("got %d body bytes", msg.Len())
 
 	// Write back message, inserting X-Mailfilter header at the bottom of the header block
 	r := bufio.NewReader(&msg)

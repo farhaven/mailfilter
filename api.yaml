@@ -25,7 +25,7 @@ paths:
       - "TODO"
       parameters:
       - in: "query"
-        name: "train"
+        name: "as"
         description: "The classification target for this message"
         required: true
         type: "string"

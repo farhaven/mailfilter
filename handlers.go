@@ -14,18 +14,15 @@ func (s *SpamFilter) trainingHandler(w http.ResponseWriter, r *http.Request) {
 	// Read from r.Body, train, persist after training
 	defer r.Body.Close()
 
-	defer func() {
-		log.Println("training done, persisting")
-
-		err := s.c.Persist()
-		if err != nil {
-			log.Panicf("can't persist db: %s", err)
-		}
-	}()
+	if r.Method != http.MethodPost {
+		code := http.StatusMethodNotAllowed
+		http.Error(w, http.StatusText(code), code)
+		return
+	}
 
 	args := r.URL.Query()
 
-	trainAs := args.Get("train")
+	trainAs := args.Get("as")
 	if trainAs == "" {
 		trainAs = "spam"
 	}
@@ -44,6 +41,15 @@ func (s *SpamFilter) trainingHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		panic(err) // TODO: Handle properly
 	}
+
+	defer func() {
+		log.Printf("training done as %q, persisting", trainAs)
+
+		err := s.c.Persist()
+		if err != nil {
+			log.Panicf("can't persist db: %s", err)
+		}
+	}()
 
 	err = s.train(r.Body, trainAs == "spam", learnFactor)
 	if err != nil {
