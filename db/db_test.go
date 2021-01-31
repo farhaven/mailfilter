@@ -2,6 +2,7 @@ package db
 
 import (
 	"os"
+	"path/filepath"
 	"strconv"
 	"testing"
 )
@@ -17,7 +18,7 @@ func expectNoError(t Fataler, err error) {
 }
 
 func TestDB_Open(t *testing.T) {
-	os.RemoveAll("test.db")
+	tmpDir := filepath.Join(t.TempDir(), "db")
 
 	testCases := []struct {
 		name      string
@@ -31,7 +32,7 @@ func TestDB_Open(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			db, err := Open("test.db", tc.writeable)
+			db, err := Open(tmpDir, tc.writeable)
 
 			if err != nil {
 				t.Error("unexpected error during open:", err)
@@ -43,9 +44,9 @@ func TestDB_Open(t *testing.T) {
 }
 
 func TestDB_SetGet(t *testing.T) {
-	os.RemoveAll("test.db")
+	tmpDir := filepath.Join(t.TempDir(), "db")
 
-	db, err := Open("test.db", true)
+	db, err := Open(tmpDir, true)
 	expectNoError(t, err)
 
 	want := 234
@@ -62,7 +63,7 @@ func TestDB_SetGet(t *testing.T) {
 	// Reopen db as readonly, assert that the value is still correct
 	expectNoError(t, db.Close())
 
-	db, err = Open("test.db", false)
+	db, err = Open(tmpDir, false)
 	expectNoError(t, err)
 
 	got, err = db.Get("test", "foo")
@@ -82,9 +83,9 @@ func TestDB_SetGet(t *testing.T) {
 }
 
 func TestDB_ManyGetSet(t *testing.T) {
-	os.RemoveAll("test.db")
+	tmpDir := filepath.Join(t.TempDir(), "db")
 
-	db, err := Open("test.db", true)
+	db, err := Open(tmpDir, true)
 	expectNoError(t, err)
 
 	const howMany = 1e5
@@ -95,7 +96,7 @@ func TestDB_ManyGetSet(t *testing.T) {
 
 	expectNoError(t, db.Close())
 
-	db, err = Open("test.db", false)
+	db, err = Open(tmpDir, false)
 	expectNoError(t, err)
 	defer db.Close()
 
@@ -128,9 +129,9 @@ func TestDB_Clamp(t *testing.T) {
 		}
 	}
 
-	os.RemoveAll("test.db")
+	tmpDir := filepath.Join(t.TempDir(), "db")
 
-	db, err := Open("test.db", true)
+	db, err := Open(tmpDir, true)
 	expectNoError(t, err)
 
 	incTest(db, 10)
@@ -141,7 +142,7 @@ func TestDB_Clamp(t *testing.T) {
 
 	expectNoError(t, db.Close())
 
-	db, err = Open("test.db", true)
+	db, err = Open(tmpDir, true)
 	expectNoError(t, err)
 	defer db.Close()
 
@@ -158,12 +159,13 @@ func TestDB_SequentialModify(t *testing.T) {
 	// The db is reopened, the counter increased, the DB is closed
 	// The db is opened again, the counter increased, the DB is closed
 	// The db is opened readonly, the counter is read
-	os.RemoveAll("test.db")
 
 	const wantIterations = 10
 
+	tmpDir := filepath.Join(t.TempDir(), "db")
+
 	for i := 0; i < wantIterations; i++ {
-		db, err := Open("test.db", true)
+		db, err := Open(tmpDir, true)
 		expectNoError(t, err)
 
 		expectNoError(t, db.Inc("test", "counter", 1))
@@ -179,7 +181,7 @@ func TestDB_SequentialModify(t *testing.T) {
 		expectNoError(t, db.Close())
 	}
 
-	db, err := Open("test.db", false)
+	db, err := Open(tmpDir, false)
 	expectNoError(t, err)
 	defer func() {
 		expectNoError(t, db.Close())
