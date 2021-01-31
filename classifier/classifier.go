@@ -93,9 +93,6 @@ type Classifier struct {
 
 	db DB
 
-	spam  map[string]int // used during training, persisted in Close
-	total map[string]int // see above
-
 	thresholdUnsure float64
 	thresholdSpam   float64
 }
@@ -104,34 +101,9 @@ func New(db DB, thresholdUnsure, thresholdSpam float64) *Classifier {
 	return &Classifier{
 		db: db,
 
-		spam:  make(map[string]int),
-		total: make(map[string]int),
-
 		thresholdUnsure: thresholdUnsure,
 		thresholdSpam:   thresholdSpam,
 	}
-}
-
-func (c *Classifier) Persist() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	for word, diff := range c.total {
-		err := c.db.Inc("total", word, diff)
-		if err != nil {
-			return fmt.Errorf("updating total for %q: %w", word, err)
-		}
-	}
-
-	for word, diff := range c.spam {
-		err := c.db.Inc("spam", word, diff)
-		if err != nil {
-			return fmt.Errorf("updating spam score for %q: %w", word, err)
-		}
-	}
-
-	return nil
-
 }
 
 func (c *Classifier) getWord(word string) (Word, error) {
@@ -155,16 +127,23 @@ func (c *Classifier) getWord(word string) (Word, error) {
 }
 
 // Train classifies the given word as spam or not spam, training c for future recognition.
-func (c *Classifier) Train(word string, spam bool, factor int) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	c.total[word] += factor
-	if spam {
-		c.spam[word] += factor
-	} else {
-		c.spam[word] -= factor
+func (c *Classifier) Train(word string, spam bool, factor int) error {
+	err := c.db.Inc("total", word, factor)
+	if err != nil {
+		return errors.Wrap(err, "incrementing total")
 	}
+
+	if spam {
+		err = c.db.Inc("spam", word, factor)
+	} else {
+		err = c.db.Inc("spam", word, -factor)
+	}
+
+	if err != nil {
+		return errors.Wrap(err, "incrementing spam count")
+	}
+
+	return nil
 }
 
 func sigmoid(x float64) float64 {

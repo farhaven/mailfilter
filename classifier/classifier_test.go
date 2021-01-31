@@ -3,6 +3,7 @@ package classifier
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"mailfilter/db"
 	"mailfilter/filtered"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"regexp"
 	"strconv"
+	"sync"
 	"testing"
 )
 
@@ -108,6 +110,53 @@ func TestWord_SpamLikelihood(t *testing.T) {
 	}
 }
 
+type testDB struct {
+	mu sync.Mutex
+
+	total map[string]int
+	spam  map[string]int
+}
+
+func (t *testDB) Inc(bucket, key string, delta int) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if t.total == nil {
+		t.total = make(map[string]int)
+	}
+
+	if t.spam == nil {
+		t.spam = make(map[string]int)
+	}
+
+	switch bucket {
+	case "total":
+		t.total[key] += delta
+	case "spam":
+		t.spam[key] += delta
+	default:
+		panic(fmt.Sprintf("unexpected bucket %q", bucket))
+	}
+
+	return nil
+}
+
+func (t *testDB) Get(bucket, key string) (int, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	switch bucket {
+	case "total":
+		return t.total[key], nil
+	case "spam":
+		return t.spam[key], nil
+	default:
+		panic(fmt.Sprintf("unexpected bucket %q", bucket))
+	}
+
+	return 0, errors.New("unreachable")
+}
+
 func TestClassifier_Train(t *testing.T) {
 	words := []struct {
 		word string
@@ -117,11 +166,7 @@ func TestClassifier_Train(t *testing.T) {
 		{"bar", false},
 	}
 
-	db, err := db.Open("words.db")
-	if err != nil {
-		t.Fatalf("can't open db file: %s", err)
-	}
-	defer db.Close()
+	db := &testDB{}
 
 	c := New(db, 0.3, 0.7)
 
@@ -129,12 +174,12 @@ func TestClassifier_Train(t *testing.T) {
 		c.Train(w.word, w.spam, 1)
 	}
 
-	if c.total["foo"] != 1 || c.total["bar"] != 1 {
-		t.Errorf("unexpected total: %#v", c.total)
+	if db.total["foo"] != 1 || db.total["bar"] != 1 {
+		t.Errorf("unexpected total: %#v", db.total)
 	}
 
-	if c.spam["foo"] != 1 || c.spam["bar"] != -1 {
-		t.Errorf("unexpected spam: %#v", c.spam)
+	if db.spam["foo"] != 1 || db.spam["bar"] != -1 {
+		t.Errorf("unexpected spam: %#v", db.spam)
 	}
 
 	t.Logf("classifier: %#v", c)
@@ -179,11 +224,6 @@ func TestClassifier(t *testing.T) {
 
 	for _, w := range words {
 		c.Train(w.word, w.spam, 1)
-	}
-
-	err = c.Persist()
-	if err != nil {
-		t.Fatalf("can't persist trained data: %s", err)
 	}
 
 	// Verify that the recorded spamminess is correct

@@ -45,11 +45,6 @@ func (s *SpamFilter) trainingHandler(w http.ResponseWriter, r *http.Request) {
 
 	defer func() {
 		log.Printf("training done as %q, persisting", trainAs)
-
-		err := s.c.Persist()
-		if err != nil {
-			log.Panicf("can't persist db: %s", err)
-		}
 	}()
 
 	start := time.Now()
