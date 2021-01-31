@@ -1,8 +1,6 @@
-// DB implements a simple key-value store for approximate counters. Usually, the counters will be accurate,
-// but concurrent modification in different processes may make them a bit inaccurate. This is intented to be
-// used as the data store for statistical data where a small error can be traded for increased performance.
-//
-// It only works on Unix.
+// DB implements a simple key-value store for approximate counters. It is an abstraction atop of a
+// key-value store that abstracts away performance specific areas of the KV-store such as repeated
+// updates to the same counter.
 package db
 
 import (
