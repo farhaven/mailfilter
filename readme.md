@@ -2,7 +2,7 @@
 ![Build](https://github.com/farhaven/mailfilter/workflows/Build/badge.svg)
 ![Lint](https://github.com/farhaven/mailfilter/workflows/Lint/badge.svg)
 
-This is a very simple Bayesian classifier for RFC2046-formatted mail.
+This is a very simple Bayesian classifier for RFC2046-formatted mail. It runs as an HTTP server and uses POST requests as its interface.
 
 Here's how to use it:
 
@@ -11,35 +11,50 @@ Here's how to use it:
 ```
 ; ./mailfilter -help
 Usage of ./mailfilter:
-  -classify string
-    	How to classify this message. If empty, no classification is done. One of [email, plain] (default "email")
   -dbPath string
-    	path to word database (default "/home/gbe/.mailfilter.db")
-  -dump
-    	dump frequency data to stdout
-  -profilingAddr string
+    	path to word database (default "${HOME}/.mailfilter.db")
+  -listenAddr string
     	Listening address for profiling server (default "127.0.0.1:7999")
   -thresholdSpam float
     	Mail with score above this value will be classified as 'spam' (default 0.7)
   -thresholdUnsure float
     	Mail with score above this value will be classified as 'unsure' (default 0.3)
-  -train string
-    	How to train this message. If not provided, no training is done. One of [ham,spam] otherwise
-  -verbose
-    	be more verbose during training
 ```
+
+Start the server with `./mailfilter`. It'll run in the foreground and
+serve requests on `127.0.0.1:7999`.
+
+### Systemd service
+You can also use a systemd service file that looks like this:
+
+```
+[Unit]
+Description=Mail filtering daemon
+
+[Service]
+Type=simple
+ExecStart=/path/to/mailfilter
+
+[Install]
+WantedBy=default.target
+```
+
+Place it into `~/.config/systemd/user/mailfilter.service` and run
+`systemctl --user enable mailfilter && systemctl --user start
+mailfilter`. From then on, it will be started when you log in. To
+watch its output, you can use `journalctl --user -f -u mailfilter`.
 
 ## Train text as ham or spam
 
 ```
-; cat /tmp/spam/*.msg | ./mailfilter -train=spam
-; cat /tmp/ham/*.msg | ./mailfilter -train=ham
+; cat /tmp/spam/*.msg | curl -f -XPOST --data-binary @- http://localhost:7999/train?as=spam
+; cat /tmp/ham/*.msg | curl -f -XPOST --data-binary @- http://localhost:7999/train?as=ham
 ```
 
 ## Classify a message
 
 ```
-; cat /tmp/new/bla.msg | ./mailfilter -classify=email
+; cat /tmp/new/bla.msg | curl -f -XPOST --data-binary @- http://localhost:7999/classify
 ```
 
 This will write the content of `/tmp/new/bla.msg` to the standard
@@ -62,7 +77,7 @@ The thresholds can be changed by passing appropriate command line parameters.
 If you use maildrop, you can hook up mailfilter by adding a line like this to `~/.mailfilter`:
 
 ```
-xfilter "/path/to/mailfilter -classify=email"
+xfilter "curl -f -XPOST --data-binary @- http://localhost:7999/classify"
 ```
 
 After that, you can use header matches for `X-Mailfilter: label="spam"`
@@ -75,6 +90,19 @@ if (/^X-Mailfilter: label="unsure"/:h)
 	TAGS="$TAGS +unsure"
 ```
 
+## (Neo)mutt
+If you use (neo)mutt to read your mail, you can add the following key
+bindings to train mail as spam or ham:
+
+```
+macro index,pager S "<pipe-entry>curl -f -XPOST --data-binary @- http://localhost:7999/train?as=spam" "mark message as Spam"
+macro index,pager H "<pipe-entry>curl -f -XPOST --data-binary @- http://localhost:7999/train?as=ham" "mark message as Ham"
+```
+
+This will make `S` and `H` open a prepared commandline inside mutt to
+pass the mail the cursor is on (or the mail you're currently viewing)
+to mailfilter if you press return.
+
 ## Things it does well (in my opinion)
 Training is reasonably fast. Training my personal archive of OpenBSD's
 Misc mailing list (roughly 70k messages) as ham takes about 30 seconds.
@@ -86,7 +114,7 @@ of delivery agents and mail filters
 This filter is very very simple and was hacked together as a "I need to
 sit on my couch and relax"-type project. The following caveats apply:
 
-* Base64 content is not decoded
+* Base64 content is not decoded. If you use `maildrop`, it'll do the decoding before filtering the message though.
 * There is no garbage collection on the training data
 * There are only three labels: "spam", "unsure" and "ham"
 
