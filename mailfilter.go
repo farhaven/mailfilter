@@ -158,7 +158,7 @@ func main() {
 
 	log.Printf("thresholds: unsure=%f, spam=%f", *thresholdUnsure, *thresholdSpam)
 
-	db, err := db.Open(*dbPath, true)
+	db, err := db.Open(*dbPath)
 	if err != nil {
 		log.Fatalf("can't open database: %s", err)
 	}

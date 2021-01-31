@@ -117,7 +117,7 @@ func TestClassifier_Train(t *testing.T) {
 		{"bar", false},
 	}
 
-	db, err := db.Open("words.db", true)
+	db, err := db.Open("words.db")
 	if err != nil {
 		t.Fatalf("can't open db file: %s", err)
 	}
@@ -169,7 +169,7 @@ func TestClassifier(t *testing.T) {
 		{"this", true, 1},
 	}
 
-	db, err := db.Open("words.db", true)
+	db, err := db.Open("words.db")
 	if err != nil {
 		t.Fatalf("can't open db file: %s", err)
 	}

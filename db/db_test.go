@@ -21,18 +21,15 @@ func TestDB_Open(t *testing.T) {
 	tmpDir := filepath.Join(t.TempDir(), "db")
 
 	testCases := []struct {
-		name      string
-		writeable bool
+		name string
 	}{
-		{name: "readonly, not existing", writeable: false},
-		{name: "rw, not existing", writeable: true},
-		{name: "readonly, existing", writeable: false},
-		{name: "rw, existing", writeable: true},
+		{name: "not existing"},
+		{name: "existing"},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			db, err := Open(tmpDir, tc.writeable)
+			db, err := Open(tmpDir)
 
 			if err != nil {
 				t.Error("unexpected error during open:", err)
@@ -46,7 +43,7 @@ func TestDB_Open(t *testing.T) {
 func TestDB_SetGet(t *testing.T) {
 	tmpDir := filepath.Join(t.TempDir(), "db")
 
-	db, err := Open(tmpDir, true)
+	db, err := Open(tmpDir)
 	expectNoError(t, err)
 
 	want := 234
@@ -63,7 +60,7 @@ func TestDB_SetGet(t *testing.T) {
 	// Reopen db as readonly, assert that the value is still correct
 	expectNoError(t, db.Close())
 
-	db, err = Open(tmpDir, false)
+	db, err = Open(tmpDir)
 	expectNoError(t, err)
 
 	got, err = db.Get("test", "foo")
@@ -85,7 +82,7 @@ func TestDB_SetGet(t *testing.T) {
 func TestDB_ManyGetSet(t *testing.T) {
 	tmpDir := filepath.Join(t.TempDir(), "db")
 
-	db, err := Open(tmpDir, true)
+	db, err := Open(tmpDir)
 	expectNoError(t, err)
 
 	const howMany = 1e5
@@ -96,7 +93,7 @@ func TestDB_ManyGetSet(t *testing.T) {
 
 	expectNoError(t, db.Close())
 
-	db, err = Open(tmpDir, false)
+	db, err = Open(tmpDir)
 	expectNoError(t, err)
 	defer db.Close()
 
@@ -131,7 +128,7 @@ func TestDB_Clamp(t *testing.T) {
 
 	tmpDir := filepath.Join(t.TempDir(), "db")
 
-	db, err := Open(tmpDir, true)
+	db, err := Open(tmpDir)
 	expectNoError(t, err)
 
 	incTest(db, 10)
@@ -142,7 +139,7 @@ func TestDB_Clamp(t *testing.T) {
 
 	expectNoError(t, db.Close())
 
-	db, err = Open(tmpDir, true)
+	db, err = Open(tmpDir)
 	expectNoError(t, err)
 	defer db.Close()
 
@@ -165,7 +162,7 @@ func TestDB_SequentialModify(t *testing.T) {
 	tmpDir := filepath.Join(t.TempDir(), "db")
 
 	for i := 0; i < wantIterations; i++ {
-		db, err := Open(tmpDir, true)
+		db, err := Open(tmpDir)
 		expectNoError(t, err)
 
 		expectNoError(t, db.Inc("test", "counter", 1))
@@ -181,7 +178,7 @@ func TestDB_SequentialModify(t *testing.T) {
 		expectNoError(t, db.Close())
 	}
 
-	db, err := Open(tmpDir, false)
+	db, err := Open(tmpDir)
 	expectNoError(t, err)
 	defer func() {
 		expectNoError(t, db.Close())
@@ -200,7 +197,7 @@ func BenchmarkLoadStore(b *testing.B) {
 
 	os.RemoveAll("test.db")
 
-	db, err := Open("test.db", true)
+	db, err := Open("test.db")
 	expectNoError(b, err)
 
 	for i := 0; i < howMany; i++ {
@@ -212,7 +209,7 @@ func BenchmarkLoadStore(b *testing.B) {
 	b.ResetTimer()
 
 	for it := 0; it < b.N; it++ {
-		db, err := Open("test.db", true)
+		db, err := Open("test.db")
 		expectNoError(b, err)
 
 		for i := 0; i < howMany; i++ {
@@ -222,7 +219,7 @@ func BenchmarkLoadStore(b *testing.B) {
 		expectNoError(b, db.Close())
 
 		// Re-open DB readonly
-		db, err = Open("test.db", false)
+		db, err = Open("test.db")
 		expectNoError(b, err)
 
 		for i := 0; i < howMany; i += 2 {
@@ -246,7 +243,7 @@ func BenchmarkUpdate(b *testing.B) {
 	b.ResetTimer()
 
 	for it := 0; it < b.N; it++ {
-		db, err := Open("test.db", true)
+		db, err := Open("test.db")
 		expectNoError(b, err)
 
 		for c := 0; c < howMany; c++ {

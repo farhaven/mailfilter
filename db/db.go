@@ -30,7 +30,7 @@ type DB struct {
 // Open opens (and creates, if necessary) a new database. If writeable is false, the
 // database is opened in shared, read only mode. Otherwise, it is locked for exclusive
 // access and can be modified.
-func Open(path string, writeable bool) (*DB, error) {
+func Open(path string) (*DB, error) {
 	fullPath, err := filepath.Abs(path)
 	if err != nil {
 		return nil, fmt.Errorf("determining absolute path of %s: %w", path, err)
