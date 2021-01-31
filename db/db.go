@@ -13,6 +13,8 @@ import (
 	"github.com/boltdb/bolt"
 )
 
+const maxOutstandingDeltas = 1000 // Sync after this many outstanding deltas
+
 type mapKey struct {
 	bucket string
 	key    string
@@ -49,7 +51,10 @@ func Open(path string) (*DB, error) {
 
 // Close persists the data in d and closes the database.
 func (d *DB) Close() error {
-	err := d.Sync()
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	err := d.sync()
 	if err != nil {
 		return fmt.Errorf("can't sync: %w", err)
 	}
@@ -57,10 +62,9 @@ func (d *DB) Close() error {
 	return d.b.Close()
 }
 
-func (d *DB) Sync() error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
+// sync persists outstanding deltas to the on-disk db. It needs to be called whenever there is a get on a value with an
+// outstanding delta or when there is a large(-ish) number of deltas outstanding.
+func (d *DB) sync() error {
 	err := d.b.Update(func(tx *bolt.Tx) error {
 		for mk, delta := range d.deltas {
 			b, err := tx.CreateBucketIfNotExists([]byte(mk.bucket))
@@ -117,6 +121,13 @@ func (d *DB) Inc(bucket, key string, delta int) error {
 
 	d.deltas[mk] += delta
 
+	if len(d.deltas) > maxOutstandingDeltas {
+		err := d.sync()
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -135,10 +146,13 @@ func (d *DB) Get(bucket, key string) (int, error) {
 	d.mu.RUnlock()
 
 	if needSync {
-		err := d.Sync()
+		d.mu.Lock()
+		err := d.sync()
 		if err != nil {
+			d.mu.Unlock()
 			return 0, err
 		}
+		d.mu.Unlock()
 	}
 
 	var val int
