@@ -39,10 +39,16 @@ ExecStart=/path/to/mailfilter
 WantedBy=default.target
 ```
 
-Place it into `~/.config/systemd/user/mailfilter.service` and run
-`systemctl --user enable mailfilter && systemctl --user start
-mailfilter`. From then on, it will be started when you log in. To
-watch its output, you can use `journalctl --user -f -u mailfilter`.
+Place it into `~/.config/systemd/user/mailfilter.service` and run the
+following commands to enable it and start it automatically when you
+log in:
+
+```
+systemctl --user enable mailfilter
+systemctl --user start mailfilter
+```
+
+To watch its output, you can use `journalctl --user -f -u mailfilter`.
 
 ## Train text as ham or spam
 
