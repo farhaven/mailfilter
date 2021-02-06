@@ -96,4 +96,6 @@ func (s *SpamFilter) classifyHandler(w http.ResponseWriter, r *http.Request) {
 
 func (s *SpamFilter) handleIndex(w http.ResponseWriter, r *http.Request) {
 	// TODO: Just expose Swagger endpoint
+	code := http.StatusInternalServerError
+	http.Error(w, http.StatusText(code), code)
 }

@@ -4,6 +4,7 @@
 package db
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"path/filepath"
@@ -13,18 +14,27 @@ import (
 	"github.com/boltdb/bolt"
 )
 
-const maxOutstandingDeltas = 1000 // Sync after this many outstanding deltas
+const (
+	maxOutstandingDeltas = 20000 // Sync after this many outstanding deltas
+	concurrency          = 8     // How many syncers to run
+)
 
 type mapKey struct {
 	bucket string
 	key    string
 }
 
+type deltaItem struct {
+	mapKey
+	d int
+}
+
 type DB struct {
 	b *bolt.DB
 
-	mu     sync.RWMutex
-	deltas map[mapKey]int
+	updates   chan deltaItem
+	syncers   sync.WaitGroup
+	closeOnce sync.Once
 }
 
 // Open opens (and creates, if necessary) a new database. If writeable is false, the
@@ -42,8 +52,13 @@ func Open(path string) (*DB, error) {
 	}
 
 	db := &DB{
-		b:      b,
-		deltas: make(map[mapKey]int),
+		b:       b,
+		updates: make(chan deltaItem, maxOutstandingDeltas),
+	}
+
+	db.syncers.Add(concurrency)
+	for i := 0; i < concurrency; i++ {
+		go db.syncer()
 	}
 
 	return db, nil
@@ -51,58 +66,90 @@ func Open(path string) (*DB, error) {
 
 // Close persists the data in d and closes the database.
 func (d *DB) Close() error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
+	d.closeOnce.Do(func() {
+		close(d.updates)
+	})
 
-	err := d.sync()
-	if err != nil {
-		return fmt.Errorf("can't sync: %w", err)
-	}
+	d.syncers.Wait()
 
 	return d.b.Close()
 }
 
-// sync persists outstanding deltas to the on-disk db. It needs to be called whenever there is a get on a value with an
-// outstanding delta or when there is a large(-ish) number of deltas outstanding.
-func (d *DB) sync() error {
-	err := d.b.Update(func(tx *bolt.Tx) error {
-		for mk, delta := range d.deltas {
-			b, err := tx.CreateBucketIfNotExists([]byte(mk.bucket))
-			if err != nil {
-				return err
+func (d *DB) String() string {
+	stats := struct {
+		OutstandingUpdates int
+	}{
+		OutstandingUpdates: len(d.updates),
+	}
+
+	buf, _ := json.Marshal(&stats)
+	return string(buf)
+}
+
+func (d *DB) syncer() {
+	defer d.syncers.Done()
+
+	for {
+		// Wait for first update or channel close
+		first, ok := <-d.updates
+		if !ok {
+			log.Println("syncer work channel closed")
+			return
+		}
+
+		updates := make(map[mapKey]int)
+		updates[first.mapKey] = first.d
+
+		for n := 0; n < maxOutstandingDeltas && len(updates) < maxOutstandingDeltas/2; n++ {
+			// Try to get another delta non-blocking
+			select {
+			case item, ok := <-d.updates:
+				if !ok {
+					break
+				}
+
+				updates[item.mapKey] += item.d
+			default:
+				break // Nothing on the queue right now
 			}
+		}
 
-			raw := b.Get([]byte(mk.key))
+		// Got a map of updates now, let's apply them to the on-disk DB
+		err := d.b.Batch(func(tx *bolt.Tx) error {
+			for mk, delta := range updates {
+				b, err := tx.CreateBucketIfNotExists([]byte(mk.bucket))
+				if err != nil {
+					return err
+				}
 
-			var val int
-			if len(raw) != 0 {
-				val, err = strconv.Atoi(string(raw))
+				raw := b.Get([]byte(mk.key))
+
+				var val int
+				if len(raw) != 0 {
+					val, err = strconv.Atoi(string(raw))
+					if err != nil {
+						return err
+					}
+				}
+
+				val += delta
+				if val < 0 {
+					val = 0
+				}
+
+				err = b.Put([]byte(mk.key), []byte(strconv.Itoa(val)))
 				if err != nil {
 					return err
 				}
 			}
 
-			val += delta
-			if val < 0 {
-				val = 0
-			}
+			return nil
+		})
 
-			err = b.Put([]byte(mk.key), []byte(strconv.Itoa(val)))
-			if err != nil {
-				return err
-			}
+		if err != nil {
+			log.Printf("can't sync %d updates: %s", len(updates), err) // TODO: Retry
 		}
-
-		d.deltas = make(map[mapKey]int)
-
-		return nil
-	})
-
-	if err != nil {
-		return err
 	}
-
-	return nil
 }
 
 func (d *DB) LogStats() {
@@ -116,16 +163,9 @@ func (d *DB) Inc(bucket, key string, delta int) error {
 		key:    key,
 	}
 
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	d.deltas[mk] += delta
-
-	if len(d.deltas) > maxOutstandingDeltas {
-		err := d.sync()
-		if err != nil {
-			return err
-		}
+	d.updates <- deltaItem{
+		mapKey: mk,
+		d:      delta,
 	}
 
 	return nil
@@ -133,28 +173,6 @@ func (d *DB) Inc(bucket, key string, delta int) error {
 
 // Get returns the current value for the given key. If the key does not exist in the given bucket, 0 is returned.
 func (d *DB) Get(bucket, key string) (int, error) {
-	mk := mapKey{
-		bucket: bucket,
-		key:    key,
-	}
-
-	needSync := false
-	d.mu.RLock()
-	if d.deltas[mk] != 0 {
-		needSync = true
-	}
-	d.mu.RUnlock()
-
-	if needSync {
-		d.mu.Lock()
-		err := d.sync()
-		if err != nil {
-			d.mu.Unlock()
-			return 0, err
-		}
-		d.mu.Unlock()
-	}
-
 	var val int
 
 	err := d.b.View(func(tx *bolt.Tx) error {

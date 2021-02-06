@@ -9,6 +9,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"expvar"
 	"flag"
 	"fmt"
 	"io"
@@ -164,6 +165,8 @@ func main() {
 	}
 	defer db.LogStats()
 	defer db.Close()
+
+	expvar.Publish("db", db)
 
 	c := classifier.New(db, *thresholdUnsure, *thresholdSpam)
 

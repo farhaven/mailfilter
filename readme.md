@@ -111,10 +111,12 @@ to mailfilter if you press return.
 
 ## Things it does well (in my opinion)
 Training is reasonably fast. Training my personal archive of OpenBSD's
-Misc mailing list (roughly 70k messages) as ham takes about 30 seconds.
+Misc mailing list (roughly 70k messages) as ham takes about 10
+minutes, almost all of which is used for persisting the updated
+classifier state to disk.
 
 The code is quite small, and it fits quite nicely in a classical pipeline
-of delivery agents and mail filters
+of delivery agents and mail filters.
 
 ## Things is doesn't do well (in my opinion)
 This filter is very very simple and was hacked together as a "I need to
