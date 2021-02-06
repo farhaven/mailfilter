@@ -26,7 +26,6 @@ import (
 
 	"mailfilter/classifier"
 	"mailfilter/db"
-	"mailfilter/filtered"
 )
 
 type SpamFilter struct {
@@ -41,8 +40,8 @@ func (s *SpamFilter) train(in io.Reader, spam bool, learnFactor int) error {
 	go func() {
 		defer close(words)
 
-		scanner := bufio.NewScanner(filtered.NewReader(in))
-		scanner.Split(classifier.ScanNGram)
+		scanner := bufio.NewScanner(in)
+		scanner.Split(classifier.ScanWords)
 
 		for scanner.Scan() {
 			word := scanner.Text()

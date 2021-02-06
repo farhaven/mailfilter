@@ -6,47 +6,78 @@ import (
 	"io"
 	"log"
 	"math"
+	"sort"
 	"sync"
 	"unicode"
 	"unicode/utf8"
 
 	"github.com/pkg/errors"
-
-	"mailfilter/filtered"
 )
 
-func ScanNGram(data []byte, atEOF bool) (advance int, token []byte, err error) {
-	const maxLength = 16
+func ScanWords(data []byte, atEOF bool) (int, []byte, error) {
+	advance, token, err := bufio.ScanWords(data, atEOF)
 
-	// Skip leading spaces.
-	start := 0
-	for width := 0; start < len(data); start += width {
-		var r rune
-		r, width = utf8.DecodeRune(data[start:])
-		if !unicode.IsSpace(r) {
-			break
-		}
+	if len(token) == 0 {
+		return advance, token, err
 	}
 
-	// Scan until space, marking end of word.
-	for width, i := 0, start; i < len(data); i += width {
-		var r rune
-		r, width = utf8.DecodeRune(data[i:])
-		if unicode.IsSpace(r) {
-			return i + width, data[start:i], nil
+	tokLen := len(token)
+
+	var runes []rune
+	for len(token) > 0 {
+		r, sz := utf8.DecodeRune(token)
+		if sz == 0 {
+			sz = 1 // Skip invalid runes
 		}
 
-		if i >= maxLength {
-			return i + width - 1, data[start:i], nil
+		// Clean up runes, we're not that interested in specific punctuation and numbers
+		switch {
+		case unicode.IsPunct(r) || unicode.IsSymbol(r) || unicode.IsMark(r):
+			r = '!'
+		case unicode.IsControl(r) || r == utf8.RuneError:
+			r = '*'
+		case unicode.IsNumber(r):
+			r = '#'
 		}
+
+		runes = append(runes, r)
+
+		token = token[sz:]
 	}
 
-	// If we're at EOF, we have a final, non-empty, non-terminated word. Return it.
-	if atEOF && len(data) > start {
-		return len(data), data[start:], nil
+	// Sort runes
+	sort.Slice(runes, func(i, j int) bool {
+		return runes[i] < runes[j]
+	})
+
+	var (
+		last       rune
+		compressed []rune
+	)
+	for _, r := range runes {
+		if last == r {
+			continue
+		}
+
+		last = r
+
+		compressed = append(compressed, last)
 	}
-	// Request more data.
-	return start, nil, nil
+
+	token = make([]byte, tokLen)
+	idx := 0
+	for _, r := range compressed {
+		sz := utf8.EncodeRune(token[idx:], r)
+		idx += sz
+	}
+
+	token = token[:idx]
+
+	if len(token) > 128 {
+		token = token[:128]
+	}
+
+	return advance, token, err
 }
 
 type Word struct {
@@ -169,8 +200,8 @@ func (c ClassificationResult) String() string {
 
 // Classify classifies the given text and returns a label along with a "certainty" value for that label.
 func (c *Classifier) Classify(text io.Reader) (ClassificationResult, error) {
-	scanner := bufio.NewScanner(filtered.NewReader(text))
-	scanner.Split(ScanNGram)
+	scanner := bufio.NewScanner(text)
+	scanner.Split(ScanWords)
 
 	var scores []float64
 	for scanner.Scan() {

@@ -45,7 +45,7 @@ func TestScan(t *testing.T) {
 			buf := bytes.NewBufferString(tc.txt)
 
 			scanner := bufio.NewScanner(filtered.NewReader(buf))
-			scanner.Split(ScanNGram)
+			scanner.Split(ScanWords)
 
 			wordIdx := 0
 			for ; scanner.Scan(); wordIdx++ {
