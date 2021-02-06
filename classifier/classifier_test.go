@@ -3,10 +3,9 @@ package classifier
 import (
 	"bufio"
 	"bytes"
-	"errors"
 	"fmt"
+	"log"
 	"mailfilter/db"
-	"mailfilter/filtered"
 	"math"
 	"os"
 	"regexp"
@@ -44,7 +43,7 @@ func TestScan(t *testing.T) {
 		t.Run(strconv.Itoa(idx), func(t *testing.T) {
 			buf := bytes.NewBufferString(tc.txt)
 
-			scanner := bufio.NewScanner(filtered.NewReader(buf))
+			scanner := bufio.NewScanner(buf)
 			scanner.Split(ScanWords)
 
 			wordIdx := 0
@@ -150,11 +149,9 @@ func (t *testDB) Get(bucket, key string) (int, error) {
 		return t.total[key], nil
 	case "spam":
 		return t.spam[key], nil
-	default:
-		panic(fmt.Sprintf("unexpected bucket %q", bucket))
 	}
 
-	return 0, errors.New("unreachable")
+	panic(fmt.Sprintf("unexpected bucket %q", bucket))
 }
 
 func TestClassifier_Train(t *testing.T) {
@@ -171,7 +168,10 @@ func TestClassifier_Train(t *testing.T) {
 	c := New(db, 0.3, 0.7)
 
 	for _, w := range words {
-		c.Train(w.word, w.spam, 1)
+		err := c.Train(w.word, w.spam, 1)
+		if err != nil {
+			log.Fatalf("unexpected error: %s", err)
+		}
 	}
 
 	if db.total["foo"] != 1 || db.total["bar"] != 1 {
@@ -223,7 +223,10 @@ func TestClassifier(t *testing.T) {
 	c := New(db, 0.3, 0.7)
 
 	for _, w := range words {
-		c.Train(w.word, w.spam, 1)
+		err := c.Train(w.word, w.spam, 1)
+		if err != nil {
+			t.Fatalf("unexpected error: %s", err)
+		}
 	}
 
 	// Verify that the recorded spamminess is correct

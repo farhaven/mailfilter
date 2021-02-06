@@ -7,7 +7,6 @@ import (
 	"log"
 	"math"
 	"sort"
-	"sync"
 	"unicode"
 	"unicode/utf8"
 
@@ -120,8 +119,6 @@ type DB interface {
 }
 
 type Classifier struct {
-	mu sync.Mutex
-
 	db DB
 
 	thresholdUnsure float64

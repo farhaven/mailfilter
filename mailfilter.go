@@ -50,7 +50,10 @@ func (s *SpamFilter) train(in io.Reader, spam bool, learnFactor int) error {
 	}()
 
 	for word := range words {
-		s.c.Train(word, spam, learnFactor)
+		err := s.c.Train(word, spam, learnFactor)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
