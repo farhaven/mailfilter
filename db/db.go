@@ -15,8 +15,8 @@ import (
 )
 
 const (
-	maxOutstandingDeltas = 20000 // Sync after this many outstanding deltas
-	concurrency          = 8     // How many syncers to run
+	concurrency          = 8                   // How many syncers to run
+	maxOutstandingDeltas = 20000 * concurrency // Sync after this many outstanding deltas
 )
 
 type mapKey struct {
