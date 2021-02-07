@@ -26,6 +26,7 @@ import (
 
 	"mailfilter/classifier"
 	"mailfilter/db"
+	"mailfilter/ntuple"
 )
 
 type SpamFilter struct {
@@ -35,22 +36,20 @@ type SpamFilter struct {
 // train reads text from in and trains the given classifier to recognize
 // the text as ham or spam, depending on the spam flag.
 func (s *SpamFilter) train(in io.Reader, spam bool, learnFactor int) error {
-	words := make(chan string, 8192)
+	buf := make([]byte, 4)
+	reader := ntuple.New(in)
 
-	go func() {
-		defer close(words)
-
-		scanner := bufio.NewScanner(in)
-		scanner.Split(classifier.ScanWords)
-
-		for scanner.Scan() {
-			word := scanner.Text()
-			words <- word
+	for {
+		err := reader.Next(buf)
+		if errors.Is(err, io.EOF) {
+			break
 		}
-	}()
+		if err != nil {
+			return err
+		}
 
-	for word := range words {
-		err := s.c.Train(word, spam, learnFactor)
+		word := string(buf)
+		err = s.c.Train(word, spam, learnFactor)
 		if err != nil {
 			return err
 		}

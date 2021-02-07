@@ -1,83 +1,15 @@
 package classifier
 
 import (
-	"bufio"
 	"fmt"
 	"io"
 	"log"
 	"math"
-	"sort"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/pkg/errors"
+
+	"mailfilter/ntuple"
 )
-
-func ScanWords(data []byte, atEOF bool) (int, []byte, error) {
-	advance, token, err := bufio.ScanWords(data, atEOF)
-
-	if len(token) == 0 {
-		return advance, token, err
-	}
-
-	tokLen := len(token)
-
-	var runes []rune
-	for len(token) > 0 {
-		r, sz := utf8.DecodeRune(token)
-		if sz == 0 {
-			sz = 1 // Skip invalid runes
-		}
-
-		// Clean up runes, we're not that interested in specific punctuation and numbers
-		switch {
-		case unicode.IsPunct(r) || unicode.IsSymbol(r) || unicode.IsMark(r):
-			r = '!'
-		case unicode.IsControl(r) || r == utf8.RuneError:
-			r = '*'
-		case unicode.IsNumber(r):
-			r = '#'
-		}
-
-		runes = append(runes, r)
-
-		token = token[sz:]
-	}
-
-	// Sort runes
-	sort.Slice(runes, func(i, j int) bool {
-		return runes[i] < runes[j]
-	})
-
-	var (
-		last       rune
-		compressed []rune
-	)
-	for _, r := range runes {
-		if last == r {
-			continue
-		}
-
-		last = r
-
-		compressed = append(compressed, last)
-	}
-
-	token = make([]byte, tokLen)
-	idx := 0
-	for _, r := range compressed {
-		sz := utf8.EncodeRune(token[idx:], r)
-		idx += sz
-	}
-
-	token = token[:idx]
-
-	if len(token) > 128 {
-		token = token[:128]
-	}
-
-	return advance, token, err
-}
 
 type Word struct {
 	Text  string
@@ -197,12 +129,21 @@ func (c ClassificationResult) String() string {
 
 // Classify classifies the given text and returns a label along with a "certainty" value for that label.
 func (c *Classifier) Classify(text io.Reader) (ClassificationResult, error) {
-	scanner := bufio.NewScanner(text)
-	scanner.Split(ScanWords)
+	reader := ntuple.New(text)
+
+	buf := make([]byte, 4)
 
 	var scores []float64
-	for scanner.Scan() {
-		word, err := c.getWord(scanner.Text())
+	for {
+		err := reader.Next(buf)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return ClassificationResult{}, errors.Wrap(err, "reading input")
+		}
+
+		word, err := c.getWord(string(buf))
 		if err != nil {
 			return ClassificationResult{}, errors.Wrap(err, "getting word counts")
 		}

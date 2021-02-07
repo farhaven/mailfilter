@@ -1,75 +1,15 @@
 package classifier
 
 import (
-	"bufio"
 	"bytes"
 	"fmt"
 	"log"
 	"mailfilter/db"
 	"math"
 	"os"
-	"regexp"
-	"strconv"
 	"sync"
 	"testing"
 )
-
-func TestScan(t *testing.T) {
-	testCases := []struct {
-		txt         string
-		expectWords []string
-	}{
-		{
-			txt:         "foo, bar asd2123aaa yellow :)  ",
-			expectWords: []string{"foo!", "bar", "asd#aaa", "yellow", "!"},
-		},
-		{
-			txt:         "green GREEN grEEn gr33n",
-			expectWords: []string{"green", "green", "green", "gr#n"},
-		},
-		{
-			txt:         "foo 123 bar :) asdf",
-			expectWords: []string{"foo", "#", "bar", "!", "asdf"},
-		},
-		{
-			txt:         "averylongwordindeedprobablylongerthansixteencharacters",
-			expectWords: []string{"averylongwordind", "eedprobablylonge", "rthansixteenchar", "acters"},
-		},
-	}
-
-	expr := regexp.MustCompile(`^[\p{Ll}!#]+$`)
-
-	for idx, tc := range testCases {
-		t.Run(strconv.Itoa(idx), func(t *testing.T) {
-			buf := bytes.NewBufferString(tc.txt)
-
-			scanner := bufio.NewScanner(buf)
-			scanner.Split(ScanWords)
-
-			wordIdx := 0
-			for ; scanner.Scan(); wordIdx++ {
-				word := scanner.Text()
-				t.Logf("got word: %s", word)
-
-				if !expr.Match([]byte(word)) {
-					t.Errorf("%q does not match %s", word, expr)
-				}
-
-				if len(tc.expectWords) < (wordIdx + 1) {
-					t.Errorf("got unexpected word %q", word)
-				}
-
-				if len(tc.expectWords) > wordIdx && tc.expectWords[wordIdx] != word {
-					t.Errorf("expected %q at %d, got %q", tc.expectWords[wordIdx], idx, word)
-				}
-			}
-
-			if len(tc.expectWords) != wordIdx {
-				t.Errorf("expected %d words, got %d", len(tc.expectWords), wordIdx)
-			}
-		})
-	}
-}
 
 func TestWord_SpamLikelihood(t *testing.T) {
 	testCases := []struct {
