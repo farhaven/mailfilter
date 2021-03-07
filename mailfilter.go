@@ -9,7 +9,7 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"expvar"
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -17,15 +17,17 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"os"
+	"os/signal"
 	"os/user"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"time"
 
 	"github.com/pkg/errors"
 
+	"mailfilter/bloom"
 	"mailfilter/classifier"
-	"mailfilter/db"
 	"mailfilter/ntuple"
 )
 
@@ -48,8 +50,7 @@ func (s *SpamFilter) train(in io.Reader, spam bool, learnFactor int) error {
 			return err
 		}
 
-		word := string(buf)
-		err = s.c.Train(word, spam, learnFactor)
+		err = s.c.Train(buf, spam, learnFactor)
 		if err != nil {
 			return err
 		}
@@ -139,18 +140,12 @@ func main() {
 	}
 
 	listenAddr := flag.String("listenAddr", "127.0.0.1:7999", "Listening address for profiling server")
-	dbPath := flag.String("dbPath", filepath.Join(user.HomeDir, ".mailfilter.db"), "path to word database")
+	dbPath := flag.String("dbPath", filepath.Join(user.HomeDir, ".flowers"), "path to word database")
 
 	thresholdUnsure := flag.Float64("thresholdUnsure", 0.3, "Mail with score above this value will be classified as 'unsure'")
 	thresholdSpam := flag.Float64("thresholdSpam", 0.7, "Mail with score above this value will be classified as 'spam'")
 
 	flag.Parse()
-
-	startTime := time.Now()
-
-	defer func() {
-		log.Println("done in", time.Since(startTime))
-	}()
 
 	if *thresholdUnsure >= *thresholdSpam {
 		fmt.Fprintf(flag.CommandLine.Output(), "Threshold for 'unknown' must be lower than threshold for 'spam'\n\n")
@@ -160,25 +155,58 @@ func main() {
 
 	log.Printf("thresholds: unsure=%f, spam=%f", *thresholdUnsure, *thresholdSpam)
 
-	db, err := db.Open(*dbPath)
-	if err != nil {
-		log.Fatalf("can't open database: %s", err)
-	}
-	defer db.LogStats()
-	defer db.Close()
+	ctx, done := context.WithCancel(context.Background())
+	defer done()
 
-	expvar.Publish("db", db)
+	var wg sync.WaitGroup
 
-	c := classifier.New(db, *thresholdUnsure, *thresholdSpam)
+	wg.Add(2)
+
+	dbTotal := bloom.NewDB(*dbPath, "total")
+	go func() {
+		defer wg.Done()
+		dbTotal.Run(ctx)
+	}()
+
+	dbSpam := bloom.NewDB(*dbPath, "spam")
+	go func() {
+		defer wg.Done()
+		dbSpam.Run(ctx)
+	}()
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt)
+	go func() {
+		s := <-sigChan
+		log.Println("got signal", s, "terminating")
+
+		done()
+	}()
+
+	c := classifier.New(dbTotal, dbSpam, *thresholdUnsure, *thresholdSpam)
 
 	s := SpamFilter{c}
 	http.HandleFunc("/", s.handleIndex)
 	http.HandleFunc("/train", s.trainingHandler)
 	http.HandleFunc("/classify", s.classifyHandler)
 
-	log.Println("starting http server on", *listenAddr)
-	err = http.ListenAndServe(*listenAddr, nil)
-	if err != nil {
-		log.Printf("can't start profiling server on %s: %s", *listenAddr, err)
+	srv := http.Server{
+		Addr: *listenAddr,
 	}
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		<-ctx.Done()
+		srv.Shutdown(ctx)
+	}()
+
+	log.Println("starting http server on", *listenAddr)
+	err = srv.ListenAndServe()
+	if err != nil {
+		log.Printf("server terminated on %s: %s", *listenAddr, err)
+	}
+
+	wg.Wait()
 }

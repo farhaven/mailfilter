@@ -8,22 +8,23 @@ import (
 
 	"github.com/pkg/errors"
 
+	"mailfilter/bloom"
 	"mailfilter/ntuple"
 )
 
 type Word struct {
-	Text  string
-	Total int
-	Spam  int
+	Text  []byte
+	Total float64
+	Spam  float64
 }
 
 func (w Word) SpamLikelihood() float64 {
-	if w.Total == 0 {
+	if w.Total < 1 {
 		// haven't seen this word yet, can't say anything about it.
 		return 0.5
 	}
 
-	score := float64(w.Spam) / float64(w.Total)
+	score := float64(w.Spam+1) / float64(w.Total+1)
 
 	if math.IsInf(score, 0) {
 		panic(fmt.Sprintf("infinite score for %v", w))
@@ -45,62 +46,43 @@ func (w Word) String() string {
 	return fmt.Sprintf("{%s %d %d -> %.3f}", w.Text, w.Total, w.Spam, w.SpamLikelihood())
 }
 
-type DB interface {
-	Get(bucket string, key string) (int, error)
-	Inc(bucket string, key string, delta int) error
-}
-
 type Classifier struct {
-	db DB
+	dbTotal *bloom.DB
+	dbSpam  *bloom.DB
 
 	thresholdUnsure float64
 	thresholdSpam   float64
 }
 
-func New(db DB, thresholdUnsure, thresholdSpam float64) *Classifier {
+func New(dbTotal, dbSpam *bloom.DB, thresholdUnsure, thresholdSpam float64) *Classifier {
 	return &Classifier{
-		db: db,
+		dbTotal: dbTotal,
+		dbSpam:  dbSpam,
 
 		thresholdUnsure: thresholdUnsure,
 		thresholdSpam:   thresholdSpam,
 	}
 }
 
-func (c *Classifier) getWord(word string) (Word, error) {
+func (c *Classifier) getWord(word []byte) (Word, error) {
 	w := Word{
-		Text: word,
+		Text:  word,
+		Total: c.dbTotal.Score(word),
+		Spam:  c.dbSpam.Score(word),
 	}
 
-	var err error
-
-	w.Total, err = c.db.Get("total", word)
-	if err != nil {
-		return w, err
-	}
-
-	w.Spam, err = c.db.Get("spam", word)
-	if err != nil {
-		return w, err
+	if w.Total > w.Spam {
+		w.Total = w.Spam
 	}
 
 	return w, nil
 }
 
 // Train classifies the given word as spam or not spam, training c for future recognition.
-func (c *Classifier) Train(word string, spam bool, factor int) error {
-	err := c.db.Inc("total", word, factor)
-	if err != nil {
-		return errors.Wrap(err, "incrementing total")
-	}
-
+func (c *Classifier) Train(word []byte, spam bool, factor int) error {
+	c.dbTotal.Add(word)
 	if spam {
-		err = c.db.Inc("spam", word, factor)
-	} else {
-		err = c.db.Inc("spam", word, -factor)
-	}
-
-	if err != nil {
-		return errors.Wrap(err, "incrementing spam count")
+		c.dbSpam.Add(word)
 	}
 
 	return nil
@@ -143,7 +125,7 @@ func (c *Classifier) Classify(text io.Reader) (ClassificationResult, error) {
 			return ClassificationResult{}, errors.Wrap(err, "reading input")
 		}
 
-		word, err := c.getWord(string(buf))
+		word, err := c.getWord(buf)
 		if err != nil {
 			return ClassificationResult{}, errors.Wrap(err, "getting word counts")
 		}
