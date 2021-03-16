@@ -8,7 +8,6 @@ import (
 
 	"github.com/pkg/errors"
 
-	"mailfilter/bloom"
 	"mailfilter/ntuple"
 )
 
@@ -35,7 +34,7 @@ func (w Word) SpamLikelihood() float64 {
 	}
 
 	if score < 0 || score > 1 {
-		log.Printf("possibly corrupt database: score for {%q, %d, %d}: %f", w.Text, w.Total, w.Spam, score)
+		log.Printf("possibly corrupt database: score for {%q, %v, %v}: %f", w.Text, w.Total, w.Spam, score)
 		score = 0.5
 	}
 
@@ -43,18 +42,24 @@ func (w Word) SpamLikelihood() float64 {
 }
 
 func (w Word) String() string {
-	return fmt.Sprintf("{%s %d %d -> %.3f}", w.Text, w.Total, w.Spam, w.SpamLikelihood())
+	return fmt.Sprintf("{%s %v %v -> %.3f}", w.Text, w.Total, w.Spam, w.SpamLikelihood())
+}
+
+type DB interface {
+	Add([]byte)
+	Remove([]byte)
+	Score([]byte) float64
 }
 
 type Classifier struct {
-	dbTotal *bloom.DB
-	dbSpam  *bloom.DB
+	dbTotal DB
+	dbSpam  DB
 
 	thresholdUnsure float64
 	thresholdSpam   float64
 }
 
-func New(dbTotal, dbSpam *bloom.DB, thresholdUnsure, thresholdSpam float64) *Classifier {
+func New(dbTotal, dbSpam DB, thresholdUnsure, thresholdSpam float64) *Classifier {
 	return &Classifier{
 		dbTotal: dbTotal,
 		dbSpam:  dbSpam,

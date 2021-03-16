@@ -2,9 +2,10 @@ package classifier
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"log"
-	"mailfilter/db"
+	"mailfilter/bloom"
 	"math"
 	"os"
 	"sync"
@@ -52,46 +53,38 @@ func TestWord_SpamLikelihood(t *testing.T) {
 type testDB struct {
 	mu sync.Mutex
 
-	total map[string]int
-	spam  map[string]int
+	m map[string]int
 }
 
-func (t *testDB) Inc(bucket, key string, delta int) error {
+func (t *testDB) Add(w []byte) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	if t.total == nil {
-		t.total = make(map[string]int)
+	if t.m == nil {
+		t.m = make(map[string]int)
 	}
 
-	if t.spam == nil {
-		t.spam = make(map[string]int)
-	}
-
-	switch bucket {
-	case "total":
-		t.total[key] += delta
-	case "spam":
-		t.spam[key] += delta
-	default:
-		panic(fmt.Sprintf("unexpected bucket %q", bucket))
-	}
-
-	return nil
+	t.m[string(w)] += 1
 }
 
-func (t *testDB) Get(bucket, key string) (int, error) {
+func (t *testDB) Remove(w []byte) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	switch bucket {
-	case "total":
-		return t.total[key], nil
-	case "spam":
-		return t.spam[key], nil
+	if t.m == nil {
+		t.m = make(map[string]int)
 	}
 
-	panic(fmt.Sprintf("unexpected bucket %q", bucket))
+	if t.m[string(w)] > 0 {
+		t.m[string(w)] -= 1
+	}
+}
+
+func (t *testDB) Score(w []byte) float64 {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	return float64(t.m[string(w)])
 }
 
 func TestClassifier_Train(t *testing.T) {
@@ -103,23 +96,24 @@ func TestClassifier_Train(t *testing.T) {
 		{"bar", false},
 	}
 
-	db := &testDB{}
+	dbTotal := &testDB{}
+	dbSpam := &testDB{}
 
-	c := New(db, 0.3, 0.7)
+	c := New(dbTotal, dbSpam, 0.3, 0.7)
 
 	for _, w := range words {
-		err := c.Train(w.word, w.spam, 1)
+		err := c.Train([]byte(w.word), w.spam, 1)
 		if err != nil {
 			log.Fatalf("unexpected error: %s", err)
 		}
 	}
 
-	if db.total["foo"] != 1 || db.total["bar"] != 1 {
-		t.Errorf("unexpected total: %#v", db.total)
+	if dbTotal.Score([]byte("foo")) != 1 || dbTotal.Score([]byte("bar")) != 1 {
+		t.Errorf("unexpected total: %#v", dbTotal)
 	}
 
-	if db.spam["foo"] != 1 || db.spam["bar"] != -1 {
-		t.Errorf("unexpected spam: %#v", db.spam)
+	if dbSpam.Score([]byte("foo")) != 1 || dbSpam.Score([]byte("bar")) != -1 {
+		t.Errorf("unexpected spam: %#v", dbSpam)
 	}
 
 	t.Logf("classifier: %#v", c)
@@ -154,16 +148,30 @@ func TestClassifier(t *testing.T) {
 		{"this", true, 1},
 	}
 
-	db, err := db.Open("words.db")
-	if err != nil {
-		t.Fatalf("can't open db file: %s", err)
-	}
-	defer db.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	defer func() {
+		cancel()
+		wg.Wait()
+	}()
 
-	c := New(db, 0.3, 0.7)
+	wg.Add(2)
+	dbTotal := bloom.NewDB("words", "total")
+	go func() {
+		defer wg.Done()
+		dbTotal.Run(ctx)
+	}()
+
+	dbSpam := bloom.NewDB("words", "spam")
+	go func() {
+		defer wg.Done()
+		dbTotal.Run(ctx)
+	}()
+
+	c := New(dbTotal, dbSpam, 0.3, 0.7)
 
 	for _, w := range words {
-		err := c.Train(w.word, w.spam, 1)
+		err := c.Train([]byte(w.word), w.spam, 1)
 		if err != nil {
 			t.Fatalf("unexpected error: %s", err)
 		}
@@ -171,7 +179,7 @@ func TestClassifier(t *testing.T) {
 
 	// Verify that the recorded spamminess is correct
 	for i, w := range words {
-		word, err := c.getWord(w.word)
+		word, err := c.getWord([]byte(w.word))
 		if err != nil {
 			t.Fatalf("unexpected error: %s", err)
 		}
