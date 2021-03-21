@@ -43,7 +43,7 @@ func (p *protoVEB) set(val int, path []int) {
 	}
 
 	if p.u%leafUniverse != 0 {
-		panic(fmt.Sprintf("bad universe size %v, must be even power of %v %v", p.u, leafUniverse, p.u%leafUniverse))
+		panic(fmt.Sprintf("bad universe size %v, must be power of %v", p.u, leafUniverse))
 	}
 
 	if val < 0 {
@@ -63,13 +63,11 @@ func (p *protoVEB) set(val int, path []int) {
 		p.cluster = make([]*protoVEB, leafUniverse)
 	}
 
-	nextUniverse := p.u / leafUniverse
-
 	idx := path[0]
 
 	if p.cluster[idx] == nil {
 		p.cluster[idx] = &protoVEB{
-			u: nextUniverse,
+			u: p.u / leafUniverse,
 		}
 	}
 
@@ -160,6 +158,7 @@ func (t *Tree) slice() []Interval {
 			res = append(res, Interval{start, end + 1})
 			start = e
 			end = e
+			rest = false
 		}
 	}
 

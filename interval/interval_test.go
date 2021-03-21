@@ -170,6 +170,4 @@ func BenchmarkTree_addAndSlice(b *testing.B) {
 	if len(s) > b.N {
 		b.Fatalf("unexpected slice length. want at most %d, have %d", b.N, len(s))
 	}
-
-	b.Logf("spans: %d", len(s))
 }
