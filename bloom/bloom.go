@@ -6,31 +6,32 @@ import (
 	"fmt"
 	"hash"
 	"hash/fnv"
+	"math"
 )
 
 const (
-	filterSize = 16
-	numFields  = 8
-	cacheSize  = 4096 // maximum cache size
+	filterSize = 1_000_000
+	numFuncs   = 8
 )
 
 type F struct {
-	h      hash.Hash32
-	fields [numFields][filterSize]uint64
+	h     hash.Hash32
+	buf   [1]byte
+	field [numFuncs][filterSize]uint64
 }
 
 func (b *F) Add(w []byte) {
-	for i := 0; i < numFields; i++ {
+	for i := byte(0); i < numFuncs; i++ {
 		j := b.hash(i, w)
 
-		b.fields[i][j]++
+		b.field[i][j]++
 	}
 }
 
-func (b F) MarshalBinary() ([]byte, error) {
+func (b *F) MarshalBinary() ([]byte, error) {
 	var buf bytes.Buffer
 
-	err := binary.Write(&buf, binary.BigEndian, b.fields)
+	err := binary.Write(&buf, binary.BigEndian, b.field)
 	if err != nil {
 		return nil, err
 	}
@@ -45,39 +46,41 @@ func (b *F) Remove(w []byte) {
 		return
 	}
 
-	for i := 0; i < numFields; i++ {
+	for i := byte(0); i < numFuncs; i++ {
 		j := b.hash(i, w)
 
 		// This might happen if we bypassed the check above through a hash collision.
-		if b.fields[i][j] == 0 {
+		if b.field[i][j] == 0 {
 			continue
 		}
 
-		b.fields[i][j]--
+		b.field[i][j]--
 	}
 }
 
 // Score returns the approximate number of times w has been added to b. If the result is less
 // than one, the word has definitely never been seen by b.
-func (b F) Score(w []byte) float64 {
-	var s uint64
+func (b *F) Score(w []byte) float64 {
+	var s uint64 = math.MaxUint64
 
-	for i := 0; i < numFields; i++ {
+	for i := byte(0); i < numFuncs; i++ {
 		j := b.hash(i, w)
-		s += b.fields[i][j]
+		if s > b.field[i][j] {
+			s = b.field[i][j]
+		}
 	}
 
-	return float64(s) / float64(numFields)
+	return float64(s)
 }
 
 func (b F) String() string {
-	return fmt.Sprint(b.fields)
+	return fmt.Sprint(b.field)
 }
 
 func (b *F) UnmarshalBinary(data []byte) error {
 	buf := bytes.NewBuffer(data)
 
-	err := binary.Read(buf, binary.BigEndian, &b.fields)
+	err := binary.Read(buf, binary.BigEndian, &b.field)
 	if err != nil {
 		return err
 	}
@@ -85,13 +88,15 @@ func (b *F) UnmarshalBinary(data []byte) error {
 	return nil
 }
 
-func (b *F) hash(i int, w []byte) uint32 {
+func (b *F) hash(i byte, w []byte) uint32 {
 	if b.h == nil {
 		b.h = fnv.New32()
 	}
 
+	b.buf[0] = i
+
 	b.h.Reset()
-	b.h.Write([]byte{byte(i)})
+	b.h.Write(b.buf[:])
 	b.h.Write(w)
 
 	return b.h.Sum32() % filterSize
