@@ -84,7 +84,24 @@ func TestTree_failOddInterval(t *testing.T) {
 	}
 }
 
-func BenchmarkTree(b *testing.B) {
+func BenchmarkTree_add(b *testing.B) {
+	rand.Seed(0)
+
+	b.ReportAllocs()
+
+	tree := Tree{}
+
+	// Add b.N random intervals to a tree
+	for i := 0; i < b.N; i++ {
+		start := rand.Int()
+		val := interval{start, start + 1}
+		tree.add(val)
+	}
+
+	b.ReportMetric(float64(tree.depth()), "depth")
+}
+
+func BenchmarkTree_addAndSlice(b *testing.B) {
 	rand.Seed(0)
 
 	b.ReportAllocs()
