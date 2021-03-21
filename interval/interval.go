@@ -1,175 +1,170 @@
 package interval
 
-import "fmt"
+import (
+	"fmt"
+	"strconv"
+)
 
-type interval [2]int
+func derivePath(size, leafSize, input int) []int {
+	var l int
+	for size > 0 {
+		size /= leafSize
+		l++
+	}
+	l--
+
+	res := make([]int, l)
+
+	for i := l - 1; i >= 0; i-- {
+		res[i] = input % leafSize
+		input /= leafSize
+	}
+
+	return res
+}
+
+// proto-VEB
+
+const leafUniverse = 64
+
+type protoVEB struct {
+	u       int         // Size of the universe represented by this protoVEB (max number)
+	cluster []*protoVEB // length: u
+	summary uint64      // a bit set for every occupied cluster element
+}
+
+func (p protoVEB) String() string {
+	return fmt.Sprintf("{u: %v, c: %v, s: %064b}", p.u, p.cluster, p.summary)
+}
+
+func (p *protoVEB) set(val int, path []int) {
+	if p.u == 0 {
+		panic("protoVEB uninitialized")
+	}
+
+	if p.u%leafUniverse != 0 {
+		panic(fmt.Sprintf("bad universe size %v, must be even power of %v %v", p.u, leafUniverse, p.u%leafUniverse))
+	}
+
+	if val < 0 {
+		panic("invalid value: " + strconv.Itoa(val))
+	}
+
+	if path == nil {
+		path = derivePath(p.u, leafUniverse, val)
+	}
+
+	if p.u == leafUniverse {
+		p.summary |= (1 << (val % p.u))
+		return
+	}
+
+	if p.cluster == nil {
+		p.cluster = make([]*protoVEB, leafUniverse)
+	}
+
+	nextUniverse := p.u / leafUniverse
+
+	idx := path[0]
+
+	if p.cluster[idx] == nil {
+		p.cluster[idx] = &protoVEB{
+			u: nextUniverse,
+		}
+	}
+
+	p.cluster[idx].set(val, path[1:])
+}
+
+func (p *protoVEB) slice() []int {
+	if p.u == leafUniverse {
+		res := make([]int, 0, leafUniverse)
+
+		for i := 0; i < leafUniverse; i++ {
+			if p.summary&(1<<i) != 0 {
+				res = append(res, i)
+			}
+		}
+
+		return res
+	}
+
+	res := make([]int, 0)
+
+	for idx, c := range p.cluster {
+		if c == nil {
+			continue
+		}
+
+		cs := c.slice()
+
+		for _, v := range cs {
+			res = append(res, v+(idx*c.u))
+		}
+	}
+
+	return res
+}
+
+type Interval [2]int // Start and End (inclusive)
 
 type Tree struct {
-	val *interval
+	Max int
 
-	left   *Tree
-	right  *Tree
-	parent *Tree
+	root *protoVEB
 }
 
-func (t Tree) String() string {
-	return fmt.Sprintf("{val: %v, left: %s, right: %s}", t.val, t.left, t.right)
+func (t *Tree) add(val int) {
+	if t.root == nil {
+		t.init()
+	}
+
+	t.root.set(val, nil)
 }
 
-func (t *Tree) mergeUp() {
-	if t.parent == nil {
-		// at the root, can't merge up
-		return
+func (t *Tree) init() {
+	if t.Max == 0 {
+		panic("maximum unset")
 	}
 
-	if t.left != nil || t.right != nil {
-		// Not yet
-		return
+	universe := leafUniverse
+
+	for universe < t.Max {
+		universe *= leafUniverse
 	}
 
-	if t.parent.val[0] == t.val[1] {
-		if t != t.parent.left {
-			panic("invalid parent->child pointer")
-		}
-
-		t.parent.val[0] = t.val[0]
-		t.parent.left = nil
+	t.root = &protoVEB{
+		u: universe,
 	}
-
-	if t.parent.val[1] == t.val[0] {
-		if t != t.parent.right {
-			panic("invalid parent->child pointer")
-		}
-
-		t.parent.val[1] = t.val[1]
-		t.parent.right = nil
-	}
-
-	t.parent.mergeUp()
 }
 
-func (t *Tree) add(i interval) {
-	if i[1] != i[0]+1 {
-		panic(fmt.Sprintf("can't extend %s with %v", t, i))
-	}
-
-	if t.val == nil {
-		t.val = &i
-		return
-	}
-
-	// Check if i is already covered by the tree
-	if i[0] >= t.val[0] && i[1] <= t.val[1] {
-		return
-	}
-
-	if i[0] < t.val[0] {
-		if t.left == nil {
-			t.left = &Tree{
-				val:    &i,
-				parent: t,
-			}
-
-			t.left.mergeUp()
-
-			return
-		}
-
-		t.left.add(i)
-		return
-	}
-
-	if i[0] >= t.val[1] {
-		if t.right == nil {
-			t.right = &Tree{
-				val:    &i,
-				parent: t,
-			}
-
-			t.right.mergeUp()
-
-			return
-		}
-
-		t.right.add(i)
-		return
-	}
-
-	panic(fmt.Sprintf("don't know how to add %v to %s", i, t))
-}
-
-func (t Tree) depth() int {
-	if t.val == nil {
-		return 0
-	}
-
-	var (
-		ldepth int
-		rdepth int
-	)
-
-	if t.left != nil {
-		ldepth = t.left.depth()
-	}
-
-	if t.right != nil {
-		rdepth = t.right.depth()
-	}
-
-	if ldepth > rdepth {
-		return 1 + ldepth
-	}
-
-	return 1 + rdepth
-}
-
-func (t *Tree) min() *interval {
-	if t.left != nil {
-		return t.left.min()
-	}
-
-	return t.val
-}
-
-func (t *Tree) max() *interval {
-	if t.right != nil {
-		return t.right.max()
-	}
-
-	return t.val
-}
-
-func (t Tree) slice() []interval {
-	if t.val == nil {
+func (t *Tree) slice() []Interval {
+	s := t.root.slice()
+	if len(s) == 0 {
 		return nil
 	}
 
-	var res []interval
+	start := s[0]
+	end := s[0]
 
-	if t.left != nil {
-		res = t.left.slice()
-	}
+	var (
+		res  []Interval
+		rest bool
+	)
 
-	res = append(res, *t.val)
-
-	if t.right != nil {
-		res = append(res, t.right.slice()...)
-	}
-
-	if t.parent == nil {
-		compressed := make([]interval, 1, len(res))
-
-		compressed[0] = res[0]
-
-		for _, v := range res[1:] {
-			if v[0] == compressed[len(compressed)-1][1] {
-				compressed[len(compressed)-1][1] = v[1]
-			} else {
-				compressed = append(compressed, v)
-			}
+	for _, e := range s[1:] {
+		if e == end+1 {
+			end = e
+			rest = true
+		} else {
+			res = append(res, Interval{start, end + 1})
+			start = e
+			end = e
 		}
+	}
 
-		return compressed
+	if rest {
+		res = append(res, Interval{start, end + 1})
 	}
 
 	return res
