@@ -16,6 +16,38 @@ func (t Tree) String() string {
 	return fmt.Sprintf("{val: %v, left: %s, right: %s}", t.val, t.left, t.right)
 }
 
+func (t *Tree) mergeUp() {
+	if t.parent == nil {
+		// at the root, can't merge up
+		return
+	}
+
+	if t.left != nil || t.right != nil {
+		// Not yet
+		return
+	}
+
+	if t.parent.val[0] == t.val[1] {
+		if t != t.parent.left {
+			panic("invalid parent->child pointer")
+		}
+
+		t.parent.val[0] = t.val[0]
+		t.parent.left = nil
+	}
+
+	if t.parent.val[1] == t.val[0] {
+		if t != t.parent.right {
+			panic("invalid parent->child pointer")
+		}
+
+		t.parent.val[1] = t.val[1]
+		t.parent.right = nil
+	}
+
+	t.parent.mergeUp()
+}
+
 func (t *Tree) add(i interval) {
 	if i[1] != i[0]+1 {
 		panic(fmt.Sprintf("can't extend %s with %v", t, i))
@@ -26,12 +58,19 @@ func (t *Tree) add(i interval) {
 		return
 	}
 
+	// Check if i is already covered by the tree
+	if i[0] >= t.val[0] && i[1] <= t.val[1] {
+		return
+	}
+
 	if i[0] < t.val[0] {
 		if t.left == nil {
 			t.left = &Tree{
 				val:    &i,
 				parent: t,
 			}
+
+			t.left.mergeUp()
 
 			return
 		}
@@ -46,6 +85,8 @@ func (t *Tree) add(i interval) {
 				val:    &i,
 				parent: t,
 			}
+
+			t.right.mergeUp()
 
 			return
 		}
@@ -80,6 +121,22 @@ func (t Tree) depth() int {
 	}
 
 	return 1 + rdepth
+}
+
+func (t *Tree) min() *interval {
+	if t.left != nil {
+		return t.left.min()
+	}
+
+	return t.val
+}
+
+func (t *Tree) max() *interval {
+	if t.right != nil {
+		return t.right.max()
+	}
+
+	return t.val
 }
 
 func (t Tree) slice() []interval {

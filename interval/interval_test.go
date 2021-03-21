@@ -45,6 +45,8 @@ func TestTree_depth(t *testing.T) {
 		if e != d {
 			t.Errorf("expected depth %v, have %v", e, d)
 		}
+
+		t.Logf("%d: %s %v %v", d, tree, tree.min(), tree.max())
 	}
 
 	expectDepth(0)
@@ -53,13 +55,16 @@ func TestTree_depth(t *testing.T) {
 	expectDepth(1)
 
 	tree.add(interval{4, 5})
-	expectDepth(2)
+	expectDepth(1)
 
 	tree.add(interval{3, 4})
-	expectDepth(3)
+	expectDepth(1)
 
 	tree.add(interval{6, 7})
-	expectDepth(3)
+	expectDepth(1)
+
+	tree.add(interval{100, 101})
+	expectDepth(2)
 }
 
 func TestTree_failOddInterval(t *testing.T) {
@@ -93,12 +98,13 @@ func BenchmarkTree_add(b *testing.B) {
 
 	// Add b.N random intervals to a tree
 	for i := 0; i < b.N; i++ {
-		start := rand.Int()
+		start := rand.Intn(8 * 1_000_000)
 		val := interval{start, start + 1}
 		tree.add(val)
 	}
 
 	b.ReportMetric(float64(tree.depth()), "depth")
+	b.Logf("min: %v, max: %v", tree.min(), tree.max())
 }
 
 func BenchmarkTree_addAndSlice(b *testing.B) {
@@ -110,7 +116,7 @@ func BenchmarkTree_addAndSlice(b *testing.B) {
 
 	// Add b.N random intervals to a tree
 	for i := 0; i < b.N; i++ {
-		start := rand.Int()
+		start := rand.Intn(8 * 1_000_000)
 		val := interval{start, start + 1}
 		tree.add(val)
 	}
@@ -121,4 +127,5 @@ func BenchmarkTree_addAndSlice(b *testing.B) {
 	}
 
 	b.ReportMetric(float64(tree.depth()), "depth")
+	b.Logf("spans: %d, min: %v, max: %v", len(s), tree.min(), tree.max())
 }
