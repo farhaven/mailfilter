@@ -25,9 +25,11 @@ func TestPath(t *testing.T) {
 		{9, []int{1, 0, 0}},
 	}
 
+	v := protoVEB{}
+
 	for _, tc := range testCases {
 		t.Run(fmt.Sprintf("%d-%v", tc.in, tc.path), func(t *testing.T) {
-			p := derivePath(size, leafSize, tc.in)
+			p := v.derivePath(size, leafSize, tc.in)
 			t.Logf("p: %v", p)
 
 			if len(p) != len(tc.path) {
@@ -135,7 +137,7 @@ func TestTree(t *testing.T) {
 	}
 }
 
-func BenchmarkTree_add(b *testing.B) {
+func BenchmarkTree_addOnly(b *testing.B) {
 	rand.Seed(0)
 
 	b.ReportAllocs()
@@ -157,7 +159,7 @@ func BenchmarkTree_addAndSlice(b *testing.B) {
 	b.ReportAllocs()
 
 	tree := Tree{
-		Max: 10 * 10_000_000,
+		Max: 8 * 10_000_000,
 	}
 
 	// Add b.N random intervals to a tree

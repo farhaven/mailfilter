@@ -5,7 +5,22 @@ import (
 	"strconv"
 )
 
-func derivePath(size, leafSize, input int) []int {
+// proto-VEB
+
+const leafUniverse = 64
+
+type protoVEB struct {
+	u       int         // Size of the universe represented by this protoVEB (max number)
+	path    [16]int     // Reused to avoid allocation in derivePath
+	cluster []*protoVEB // length: u
+	summary uint64      // a bit set for every occupied cluster element
+}
+
+func (p protoVEB) String() string {
+	return fmt.Sprintf("{u: %v, c: %v, s: %064b}", p.u, p.cluster, p.summary)
+}
+
+func (p *protoVEB) derivePath(size, leafSize, input int) []int {
 	var l int
 	for size > 0 {
 		size /= leafSize
@@ -13,28 +28,16 @@ func derivePath(size, leafSize, input int) []int {
 	}
 	l--
 
-	res := make([]int, l)
+	if l > len(p.path) {
+		panic("path too long:" + strconv.Itoa(l))
+	}
 
 	for i := l - 1; i >= 0; i-- {
-		res[i] = input % leafSize
+		p.path[i] = input % leafSize
 		input /= leafSize
 	}
 
-	return res
-}
-
-// proto-VEB
-
-const leafUniverse = 64
-
-type protoVEB struct {
-	u       int         // Size of the universe represented by this protoVEB (max number)
-	cluster []*protoVEB // length: u
-	summary uint64      // a bit set for every occupied cluster element
-}
-
-func (p protoVEB) String() string {
-	return fmt.Sprintf("{u: %v, c: %v, s: %064b}", p.u, p.cluster, p.summary)
+	return p.path[:l]
 }
 
 func (p *protoVEB) set(val int, path []int) {
@@ -51,7 +54,7 @@ func (p *protoVEB) set(val int, path []int) {
 	}
 
 	if path == nil {
-		path = derivePath(p.u, leafUniverse, val)
+		path = p.derivePath(p.u, leafUniverse, val)
 	}
 
 	if p.u == leafUniverse {
