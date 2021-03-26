@@ -156,9 +156,6 @@ func (c *Classifier) Classify(text io.Reader) (ClassificationResult, error) {
 		}
 
 		p := word.SpamLikelihood()
-		if p == 0.5 {
-			fmt.Println(word)
-		}
 
 		// Pass scores through a tuned sigmoid so that they stay strictly above 0 and
 		// strictly below 1. This makes calculating with the inverse a bit easier, at
