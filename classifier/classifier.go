@@ -87,7 +87,7 @@ func (c *Classifier) Train(in io.Reader, spam bool, learnFactor int) error {
 
 	for {
 		err := reader.Next(buf)
-		if errors.Is(err, io.EOF) {
+		if err != nil && errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
