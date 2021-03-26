@@ -6,7 +6,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-const bufSz = 4096
+const bufSz = 4096 * 1024
 
 // A Reader produces subsequent substrings of a predefined length from an io.Reader:
 //

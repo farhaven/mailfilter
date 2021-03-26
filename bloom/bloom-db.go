@@ -2,6 +2,7 @@ package bloom
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -41,12 +42,7 @@ func NewDB(root, name string) (*DB, error) {
 	}
 	defer fh.Close()
 
-	buf, err := ioutil.ReadAll(fh)
-	if err != nil {
-		return nil, err
-	}
-
-	err = db.f.UnmarshalBinary(buf)
+	err = binary.Read(fh, binary.BigEndian, &db.f)
 	if err != nil {
 		return nil, err
 	}
@@ -61,15 +57,13 @@ func (d *DB) persist() error {
 	}
 	defer f.Close()
 
-	buf, err := d.f.MarshalBinary()
+	d.mu.RLock()
+	err = binary.Write(f, binary.BigEndian, &d.f)
 	if err != nil {
+		d.mu.RUnlock()
 		return fmt.Errorf("marshal filter: %w", err)
 	}
-
-	_, err = f.Write(buf)
-	if err != nil {
-		return fmt.Errorf("writing filter: %w", err)
-	}
+	d.mu.RUnlock()
 
 	err = os.Rename(f.Name(), filepath.Join(d.root, d.name))
 	if err != nil {
@@ -80,7 +74,7 @@ func (d *DB) persist() error {
 }
 
 func (d *DB) Run(ctx context.Context) {
-	tick := time.NewTicker(5 * time.Second)
+	tick := time.NewTicker(1 * time.Minute)
 	done := false
 
 	for !done {
@@ -122,12 +116,13 @@ func (d *DB) Remove(w []byte) {
 	defer d.mu.Unlock()
 
 	d.f.Remove(w)
+	d.dirty = true
 }
 
 // Score returns the approximate number of times w has been added to d.
 func (d *DB) Score(w []byte) uint64 {
-	d.mu.Lock()
-	defer d.mu.Unlock()
+	d.mu.RLock()
+	defer d.mu.RUnlock()
 
 	return d.f.Score(w)
 }

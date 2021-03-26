@@ -1,11 +1,7 @@
 package bloom
 
 import (
-	"bytes"
-	"encoding/binary"
 	"fmt"
-	"hash"
-	"hash/fnv"
 	"math"
 )
 
@@ -15,28 +11,15 @@ const (
 )
 
 type F struct {
-	h     hash.Hash32
-	buf   [1]byte
-	field [numFuncs][filterSize]uint64
+	Field [numFuncs][filterSize]uint64
 }
 
 func (b *F) Add(w []byte) {
-	for i := byte(0); i < numFuncs; i++ {
+	for i := uint32(0); i < numFuncs; i++ {
 		j := b.hash(i, w)
 
-		b.field[i][j]++
+		b.Field[i][j]++
 	}
-}
-
-func (b *F) MarshalBinary() ([]byte, error) {
-	var buf bytes.Buffer
-
-	err := binary.Write(&buf, binary.BigEndian, b.field)
-	if err != nil {
-		return nil, err
-	}
-
-	return buf.Bytes(), nil
 }
 
 func (b *F) Remove(w []byte) {
@@ -46,15 +29,15 @@ func (b *F) Remove(w []byte) {
 		return
 	}
 
-	for i := byte(0); i < numFuncs; i++ {
+	for i := uint32(0); i < numFuncs; i++ {
 		j := b.hash(i, w)
 
 		// This might happen if we bypassed the check above through a hash collision.
-		if b.field[i][j] == 0 {
+		if b.Field[i][j] == 0 {
 			continue
 		}
 
-		b.field[i][j]--
+		b.Field[i][j]--
 	}
 }
 
@@ -62,10 +45,10 @@ func (b *F) Remove(w []byte) {
 func (b *F) Score(w []byte) uint64 {
 	var s uint64 = math.MaxUint64
 
-	for i := byte(0); i < numFuncs; i++ {
+	for i := uint32(0); i < numFuncs; i++ {
 		j := b.hash(i, w)
-		if s > b.field[i][j] {
-			s = b.field[i][j]
+		if s > b.Field[i][j] {
+			s = b.Field[i][j]
 		}
 	}
 
@@ -73,30 +56,26 @@ func (b *F) Score(w []byte) uint64 {
 }
 
 func (b F) String() string {
-	return fmt.Sprint(b.field)
+	return fmt.Sprint(b.Field)
 }
 
-func (b *F) UnmarshalBinary(data []byte) error {
-	buf := bytes.NewBuffer(data)
+// Inlined FNV32
 
-	err := binary.Read(buf, binary.BigEndian, &b.field)
-	if err != nil {
-		return err
+const (
+	offset32 = 2166136261
+	prime32  = 16777619
+)
+
+func (b *F) hash(i uint32, w []byte) uint32 {
+	var s uint32 = offset32
+
+	s *= prime32
+	s ^= i
+
+	for _, c := range w {
+		s *= prime32
+		s ^= uint32(c)
 	}
 
-	return nil
-}
-
-func (b *F) hash(i byte, w []byte) uint32 {
-	if b.h == nil {
-		b.h = fnv.New32()
-	}
-
-	b.buf[0] = i
-
-	b.h.Reset()
-	b.h.Write(b.buf[:])
-	b.h.Write(w)
-
-	return b.h.Sum32() % filterSize
+	return s % filterSize
 }

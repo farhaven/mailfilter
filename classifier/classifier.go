@@ -143,7 +143,7 @@ func (c *Classifier) Classify(text io.Reader) (ClassificationResult, error) {
 	var scores []float64
 	for {
 		err := reader.Next(buf)
-		if errors.Is(err, io.EOF) {
+		if err != nil && errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {

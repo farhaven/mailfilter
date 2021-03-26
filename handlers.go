@@ -43,11 +43,11 @@ func (s *SpamFilter) trainingHandler(w http.ResponseWriter, r *http.Request) {
 		panic(err) // TODO: Handle properly
 	}
 
+	start := time.Now()
 	defer func() {
-		log.Printf("training done as %q, persisting", trainAs)
+		log.Printf("training done as %q in %s, persisting", trainAs, time.Since(start))
 	}()
 
-	start := time.Now()
 	log.Println("factor:", learnFactor, "trainAs:", trainAs)
 
 	err = s.c.Train(r.Body, trainAs == "spam", learnFactor)
@@ -58,7 +58,7 @@ func (s *SpamFilter) trainingHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Fprintln(w, "took", time.Since(start).String(), "to train as", trainAs, "with factor", learnFactor)
+	fmt.Fprintln(w, "took", time.Since(start).String(), "to train", r.ContentLength, "bytes as", trainAs, "with factor", learnFactor)
 }
 
 func (s *SpamFilter) classifyHandler(w http.ResponseWriter, r *http.Request) {

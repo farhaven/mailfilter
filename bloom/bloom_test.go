@@ -1,6 +1,8 @@
 package bloom
 
 import (
+	"bytes"
+	"encoding/binary"
 	"errors"
 	"math"
 	"net/http"
@@ -88,19 +90,20 @@ func TestBloom_EncodeDecode(t *testing.T) {
 		t.Logf("score for %q: %v", w, s)
 	}
 
-	buf, err := f1.MarshalBinary()
+	var buf bytes.Buffer
+	err := binary.Write(&buf, binary.BigEndian, &f1)
 	if err != nil {
 		t.Fatalf("unexpected error: %s", err)
 	}
 
 	want := filterSize * 8
-	if want != len(buf) {
-		t.Errorf("unexpected length of encoded filter %d, want %d", len(buf), want)
+	if want != buf.Len() {
+		t.Errorf("unexpected length of encoded filter %d, want %d", buf.Len(), want)
 	}
 
 	var f2 F
 
-	err = f2.UnmarshalBinary(buf)
+	err = binary.Read(&buf, binary.BigEndian, &f2)
 	if err != nil {
 		t.Fatalf("unexpected error: %s", err)
 	}
@@ -176,14 +179,16 @@ func BenchmarkBloom_AddEncodeDecodeScore(b *testing.B) {
 		f1.Add(strs[i%(2*numEntries)])
 	}
 
-	buf, err := f1.MarshalBinary()
+	var buf bytes.Buffer
+
+	err := binary.Write(&buf, binary.BigEndian, &f1)
 	if err != nil {
 		b.Fatalf("unexpected error: %s", err)
 	}
 
 	var f2 F
 
-	err = f2.UnmarshalBinary(buf)
+	err = binary.Read(&buf, binary.BigEndian, &f2)
 	if err != nil {
 		b.Fatalf("unexpected error: %s", err)
 	}
