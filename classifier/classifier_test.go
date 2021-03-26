@@ -56,7 +56,7 @@ type testDB struct {
 	m map[string]uint64
 }
 
-func (t *testDB) Add(w []byte) {
+func (t *testDB) Add(w []byte, factor uint64) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -64,10 +64,10 @@ func (t *testDB) Add(w []byte) {
 		t.m = make(map[string]uint64)
 	}
 
-	t.m[string(w)] += 1
+	t.m[string(w)] += factor
 }
 
-func (t *testDB) Remove(w []byte) {
+func (t *testDB) Remove(w []byte, factor uint64) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -75,8 +75,8 @@ func (t *testDB) Remove(w []byte) {
 		t.m = make(map[string]uint64)
 	}
 
-	if t.m[string(w)] > 0 {
-		t.m[string(w)] -= 1
+	if t.m[string(w)] >= factor {
+		t.m[string(w)] -= factor
 	}
 }
 

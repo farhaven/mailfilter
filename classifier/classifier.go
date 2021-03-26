@@ -48,8 +48,8 @@ func (w Word) String() string {
 }
 
 type DB interface {
-	Add([]byte)
-	Remove([]byte)
+	Add([]byte, uint64)
+	Remove([]byte, uint64)
 	Score([]byte) uint64 // (approximate) count of times that the sequences has been added to the db
 }
 
@@ -81,7 +81,7 @@ func (c *Classifier) getWord(word []byte) (Word, error) {
 	return w, nil
 }
 
-func (c *Classifier) Train(in io.Reader, spam bool, learnFactor int) error {
+func (c *Classifier) Train(in io.Reader, spam bool, learnFactor uint64) error {
 	buf := make([]byte, 4)
 	reader := ntuple.New(in)
 
@@ -104,10 +104,12 @@ func (c *Classifier) Train(in io.Reader, spam bool, learnFactor int) error {
 }
 
 // trainWord classifies the given word as spam or not spam, training c for future recognition.
-func (c *Classifier) trainWord(word []byte, spam bool, factor int) error {
-	c.dbTotal.Add(word)
+func (c *Classifier) trainWord(word []byte, spam bool, factor uint64) error {
+	c.dbTotal.Add(word, factor)
 	if spam {
-		c.dbSpam.Add(word)
+		c.dbSpam.Add(word, factor)
+	} else {
+		c.dbSpam.Remove(word, factor)
 	}
 
 	return nil
@@ -119,8 +121,8 @@ func sigmoid(x float64) float64 {
 	}
 
 	midpoint := 0.5
-	max := 0.999999
-	k := 20.0
+	max := 0.999
+	k := 10.0
 
 	return max / (1.0 + math.Exp(-k*(x-midpoint)))
 }
@@ -173,11 +175,11 @@ func (c *Classifier) Classify(text io.Reader) (ClassificationResult, error) {
 		l2 := math.Log(p)
 
 		if math.IsNaN(l1) || math.IsInf(l1, 0) {
-			panic(fmt.Sprintf("l1: %f", l1))
+			panic(fmt.Sprintf("l1: %f %f", l1, 1-p))
 		}
 
 		if math.IsNaN(l2) || math.IsInf(l2, 0) {
-			panic(fmt.Sprintf("l2: %f", l2))
+			panic(fmt.Sprintf("l2: %f %f", l2, p))
 		}
 
 		eta += l1 - l2

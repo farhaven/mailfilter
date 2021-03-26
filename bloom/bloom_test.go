@@ -20,7 +20,7 @@ func TestBloom(t *testing.T) {
 	words := []string{"foo", "bar", "fnord", "foo", "yes", "something"}
 
 	for _, w := range words {
-		f.Add([]byte(w))
+		f.Add([]byte(w), 1)
 	}
 
 	for _, w := range words {
@@ -36,7 +36,7 @@ func TestBloom(t *testing.T) {
 	const split = 2
 
 	for _, w := range words[split:] {
-		f.Remove([]byte(w))
+		f.Remove([]byte(w), 1)
 	}
 
 	for _, w := range words[:split] {
@@ -62,7 +62,7 @@ func TestBloom_HowManyFnords(t *testing.T) {
 
 	var rounds int
 	for rounds = 1; ; rounds++ {
-		f.Add([]byte("fnord"))
+		f.Add([]byte("fnord"), 1)
 		if f.Score([]byte("fnord")) >= 1 {
 			t.Logf("needed %d fnords", rounds)
 			break
@@ -82,7 +82,7 @@ func TestBloom_EncodeDecode(t *testing.T) {
 	var f1 F
 
 	for _, w := range words {
-		f1.Add([]byte(w))
+		f1.Add([]byte(w), 1)
 	}
 
 	for _, w := range words {
@@ -140,11 +140,11 @@ func TestBloom_RelativeScore(t *testing.T) {
 	)
 
 	for _, w := range words {
-		fTotal.Add([]byte(w))
+		fTotal.Add([]byte(w), 1)
 	}
 
 	for _, w := range spam {
-		fSpam.Add([]byte(w))
+		fSpam.Add([]byte(w), 1)
 	}
 
 	words = append(words, "yellow", "pinata", "potato", "bitcoin", "schmitcoin", "flipcoin", "precisecoin")
@@ -176,7 +176,7 @@ func BenchmarkBloom_AddEncodeDecodeScore(b *testing.B) {
 	var f1 F
 
 	for i := 0; i < b.N; i++ {
-		f1.Add(strs[i%(2*numEntries)])
+		f1.Add(strs[i%(2*numEntries)], 1)
 	}
 
 	var buf bytes.Buffer
@@ -211,7 +211,7 @@ func BenchmarkF_AddTest(b *testing.B) {
 
 	f := F{}
 	for i := 0; i < b.N; i++ {
-		f.Add(txt)
+		f.Add(txt, 1)
 	}
 }
 
@@ -286,7 +286,7 @@ func BenchmarkF_AddTestData(b *testing.B) {
 		// Insert all test data elements into the bloom filter
 		for _, v := range total {
 			for ; v.c > 0; v.c-- {
-				f.Add(v.w)
+				f.Add(v.w, 1)
 			}
 		}
 	}

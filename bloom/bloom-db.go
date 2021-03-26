@@ -103,19 +103,19 @@ func (d *DB) Run(ctx context.Context) {
 	}
 }
 
-func (d *DB) Add(w []byte) {
+func (d *DB) Add(w []byte, delta uint64) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	d.f.Add(w)
+	d.f.Add(w, uint64(delta))
 	d.dirty = true
 }
 
-func (d *DB) Remove(w []byte) {
+func (d *DB) Remove(w []byte, delta uint64) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	d.f.Remove(w)
+	d.f.Remove(w, delta)
 	d.dirty = true
 }
 

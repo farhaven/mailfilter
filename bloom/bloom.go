@@ -14,30 +14,34 @@ type F struct {
 	Field [numFuncs][filterSize]uint64
 }
 
-func (b *F) Add(w []byte) {
+func (b *F) Add(w []byte, delta uint64) {
 	for i := uint32(0); i < numFuncs; i++ {
 		j := b.hash(i, w)
 
-		b.Field[i][j]++
+		b.Field[i][j] += delta
 	}
 }
 
-func (b *F) Remove(w []byte) {
+func (b *F) Remove(w []byte, delta uint64) {
 	s := b.Score(w)
-	if s < 1 {
+	if s == 0 {
 		// w is probably not in b, no need to remove it
 		return
+	}
+
+	if s < delta {
+		delta = s
 	}
 
 	for i := uint32(0); i < numFuncs; i++ {
 		j := b.hash(i, w)
 
 		// This might happen if we bypassed the check above through a hash collision.
-		if b.Field[i][j] == 0 {
+		if b.Field[i][j] < delta {
 			continue
 		}
 
-		b.Field[i][j]--
+		b.Field[i][j] -= delta
 	}
 }
 

@@ -50,7 +50,7 @@ func (s *SpamFilter) trainingHandler(w http.ResponseWriter, r *http.Request) {
 
 	log.Println("factor:", learnFactor, "trainAs:", trainAs)
 
-	err = s.c.Train(r.Body, trainAs == "spam", learnFactor)
+	err = s.c.Train(r.Body, trainAs == "spam", uint64(learnFactor))
 	if err != nil {
 		log.Printf("can't train message as %s: %s", trainAs, err)
 		code := http.StatusInternalServerError
