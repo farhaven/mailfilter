@@ -133,17 +133,25 @@ func main() {
 	ctx, done := context.WithCancel(context.Background())
 	defer done()
 
+	dbTotal, err := bloom.NewDB(*dbPath, "total")
+	if err != nil {
+		log.Fatalf("can't open bloom db: %s", err)
+	}
+
+	dbSpam, err := bloom.NewDB(*dbPath, "spam")
+	if err != nil {
+		log.Fatalf("can't open bloom db: %s", err)
+	}
+
 	var wg sync.WaitGroup
 
 	wg.Add(2)
 
-	dbTotal := bloom.NewDB(*dbPath, "total")
 	go func() {
 		defer wg.Done()
 		dbTotal.Run(ctx)
 	}()
 
-	dbSpam := bloom.NewDB(*dbPath, "spam")
 	go func() {
 		defer wg.Done()
 		dbSpam.Run(ctx)

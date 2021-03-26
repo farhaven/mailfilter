@@ -150,6 +150,16 @@ func TestClassifier_Train(t *testing.T) {
 
 	tmp := t.TempDir()
 
+	dbTotal, err := bloom.NewDB(tmp, "total")
+	if err != nil {
+		t.Fatalf("can't create new bloom db: %s", err)
+	}
+
+	dbSpam, err := bloom.NewDB(tmp, "spam")
+	if err != nil {
+		t.Fatalf("can't create new bloom db: %s", err)
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
 	defer func() {
@@ -158,13 +168,11 @@ func TestClassifier_Train(t *testing.T) {
 	}()
 
 	wg.Add(2)
-	dbTotal := bloom.NewDB(tmp, "total")
 	go func() {
 		defer wg.Done()
 		dbTotal.Run(ctx)
 	}()
 
-	dbSpam := bloom.NewDB(tmp, "spam")
 	go func() {
 		defer wg.Done()
 		dbTotal.Run(ctx)
@@ -194,6 +202,18 @@ func TestClassifier_Train(t *testing.T) {
 }
 
 func TestClassifier_Text(t *testing.T) {
+	tmp := t.TempDir()
+
+	dbTotal, err := bloom.NewDB(tmp, "total")
+	if err != nil {
+		t.Fatalf("can't open bloom db: %s", err)
+	}
+
+	dbSpam, err := bloom.NewDB(tmp, "spam")
+	if err != nil {
+		t.Fatalf("can't open bloom db: %s", err)
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
 	defer func() {
@@ -203,15 +223,11 @@ func TestClassifier_Text(t *testing.T) {
 
 	wg.Add(2)
 
-	tmp := t.TempDir()
-
-	dbTotal := bloom.NewDB(tmp, "total")
 	go func() {
 		defer wg.Done()
 		dbTotal.Run(ctx)
 	}()
 
-	dbSpam := bloom.NewDB(tmp, "spam")
 	go func() {
 		defer wg.Done()
 		dbTotal.Run(ctx)
