@@ -53,7 +53,7 @@ func TestWord_SpamLikelihood(t *testing.T) {
 type testDB struct {
 	mu sync.Mutex
 
-	m map[string]int
+	m map[string]uint64
 }
 
 func (t *testDB) Add(w []byte) {
@@ -61,7 +61,7 @@ func (t *testDB) Add(w []byte) {
 	defer t.mu.Unlock()
 
 	if t.m == nil {
-		t.m = make(map[string]int)
+		t.m = make(map[string]uint64)
 	}
 
 	t.m[string(w)] += 1
@@ -72,7 +72,7 @@ func (t *testDB) Remove(w []byte) {
 	defer t.mu.Unlock()
 
 	if t.m == nil {
-		t.m = make(map[string]int)
+		t.m = make(map[string]uint64)
 	}
 
 	if t.m[string(w)] > 0 {
@@ -80,14 +80,14 @@ func (t *testDB) Remove(w []byte) {
 	}
 }
 
-func (t *testDB) Score(w []byte) float64 {
+func (t *testDB) Score(w []byte) uint64 {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	return float64(t.m[string(w)])
+	return t.m[string(w)]
 }
 
-func TestClassifier_Train(t *testing.T) {
+func TestClassifier_TrainSimple(t *testing.T) {
 	words := []struct {
 		word string
 		spam bool
@@ -102,7 +102,7 @@ func TestClassifier_Train(t *testing.T) {
 	c := New(dbTotal, dbSpam, 0.3, 0.7)
 
 	for _, w := range words {
-		err := c.Train([]byte(w.word), w.spam, 1)
+		err := c.trainWord([]byte(w.word), w.spam, 1)
 		if err != nil {
 			log.Fatalf("unexpected error: %s", err)
 		}
@@ -112,14 +112,14 @@ func TestClassifier_Train(t *testing.T) {
 		t.Errorf("unexpected total: %#v", dbTotal)
 	}
 
-	if dbSpam.Score([]byte("foo")) != 1 || dbSpam.Score([]byte("bar")) != -1 {
+	if dbSpam.Score([]byte("foo")) != 1 || dbSpam.Score([]byte("bar")) != 0 {
 		t.Errorf("unexpected spam: %#v", dbSpam)
 	}
 
 	t.Logf("classifier: %#v", c)
 }
 
-func TestClassifier(t *testing.T) {
+func TestClassifier_Train(t *testing.T) {
 	// First, test training
 	words := []struct {
 		word        string
@@ -128,9 +128,9 @@ func TestClassifier(t *testing.T) {
 	}{
 		{"bar", true, 1},
 		{"bar", true, 1},
-		{"fnord", false, 1.0 / 3},
-		{"fnord", true, 1.0 / 3},
-		{"fnord", true, 1.0 / 3},
+		{"fnord", false, 2.0 / 3},
+		{"fnord", true, 2.0 / 3},
+		{"fnord", true, 2.0 / 3},
 		{"foo", false, 0},
 		{"foo", false, 0},
 		{"foo", false, 0},
@@ -148,6 +148,8 @@ func TestClassifier(t *testing.T) {
 		{"this", true, 1},
 	}
 
+	tmp := t.TempDir()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
 	defer func() {
@@ -156,13 +158,13 @@ func TestClassifier(t *testing.T) {
 	}()
 
 	wg.Add(2)
-	dbTotal := bloom.NewDB("words", "total")
+	dbTotal := bloom.NewDB(tmp, "total")
 	go func() {
 		defer wg.Done()
 		dbTotal.Run(ctx)
 	}()
 
-	dbSpam := bloom.NewDB("words", "spam")
+	dbSpam := bloom.NewDB(tmp, "spam")
 	go func() {
 		defer wg.Done()
 		dbTotal.Run(ctx)
@@ -171,7 +173,7 @@ func TestClassifier(t *testing.T) {
 	c := New(dbTotal, dbSpam, 0.3, 0.7)
 
 	for _, w := range words {
-		err := c.Train([]byte(w.word), w.spam, 1)
+		err := c.trainWord([]byte(w.word), w.spam, 1)
 		if err != nil {
 			t.Fatalf("unexpected error: %s", err)
 		}
@@ -189,6 +191,61 @@ func TestClassifier(t *testing.T) {
 			t.Errorf("expected score %f, got %f for word %d: %v (db word: %v)", w.expectScore, s, i, w, word)
 		}
 	}
+}
+
+func TestClassifier_Text(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	defer func() {
+		cancel()
+		wg.Wait()
+	}()
+
+	wg.Add(2)
+
+	tmp := t.TempDir()
+
+	dbTotal := bloom.NewDB(tmp, "total")
+	go func() {
+		defer wg.Done()
+		dbTotal.Run(ctx)
+	}()
+
+	dbSpam := bloom.NewDB(tmp, "spam")
+	go func() {
+		defer wg.Done()
+		dbTotal.Run(ctx)
+	}()
+
+	c := New(dbTotal, dbSpam, 0.3, 0.7)
+
+	// Train the classifier
+	textSpam := []string{
+		"this is spam",
+		"bitcoin is a good investment",
+		"security update",
+	}
+
+	textHam := []string{
+		"how are you doing?",
+		"foo is a fnord, so it's good. some bla as well.",
+		"all of these worlds are yours, except europa. attempt no landing there.",
+		"my friends are cool",
+	}
+
+	for _, txt := range textSpam {
+		err := c.Train(bytes.NewBufferString(txt), true, 1)
+		if err != nil {
+			t.Fatalf("can't train text %q: %s", txt, err)
+		}
+	}
+
+	for _, txt := range textHam {
+		err := c.Train(bytes.NewBufferString(txt), false, 1)
+		if err != nil {
+			t.Fatalf("can't train text %q: %s", txt, err)
+		}
+	}
 
 	// Classify a few short texts
 	texts := []struct {
@@ -196,6 +253,7 @@ func TestClassifier(t *testing.T) {
 		expectScore float64
 		expectLabel string
 	}{
+		{"buy coins now", 1, "spam"},
 		{"foo fnord bla", 0, "ham"},
 		{"asdf yes", 0.5, "unsure"},
 		{"foo bar snafu", 0, "ham"},

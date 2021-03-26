@@ -12,18 +12,20 @@ import (
 )
 
 type Word struct {
-	Text  []byte
-	Total float64
-	Spam  float64
+	Text []byte
+
+	// Number of times this word has been seen in all messages and in spam messages
+	Total uint64
+	Spam  uint64
 }
 
 func (w Word) SpamLikelihood() float64 {
-	if w.Total < 1 {
+	if w.Total == 0 {
 		// haven't seen this word yet, can't say anything about it.
 		return 0.5
 	}
 
-	score := float64(w.Spam+1) / float64(w.Total+1)
+	score := float64(w.Spam) / float64(w.Total)
 
 	if math.IsInf(score, 0) {
 		panic(fmt.Sprintf("infinite score for %v", w))
@@ -42,13 +44,13 @@ func (w Word) SpamLikelihood() float64 {
 }
 
 func (w Word) String() string {
-	return fmt.Sprintf("{%s %v %v -> %.3f}", w.Text, w.Total, w.Spam, w.SpamLikelihood())
+	return fmt.Sprintf("{%q %v %v -> %.3f}", w.Text, w.Total, w.Spam, w.SpamLikelihood())
 }
 
 type DB interface {
 	Add([]byte)
 	Remove([]byte)
-	Score([]byte) float64
+	Score([]byte) uint64 // (approximate) count of times that the sequences has been added to the db
 }
 
 type Classifier struct {
@@ -76,15 +78,33 @@ func (c *Classifier) getWord(word []byte) (Word, error) {
 		Spam:  c.dbSpam.Score(word),
 	}
 
-	if w.Total > w.Spam {
-		w.Total = w.Spam
-	}
-
 	return w, nil
 }
 
-// Train classifies the given word as spam or not spam, training c for future recognition.
-func (c *Classifier) Train(word []byte, spam bool, factor int) error {
+func (c *Classifier) Train(in io.Reader, spam bool, learnFactor int) error {
+	buf := make([]byte, 4)
+	reader := ntuple.New(in)
+
+	for {
+		err := reader.Next(buf)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return err
+		}
+
+		err = c.trainWord(buf, spam, learnFactor)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// trainWord classifies the given word as spam or not spam, training c for future recognition.
+func (c *Classifier) trainWord(word []byte, spam bool, factor int) error {
 	c.dbTotal.Add(word)
 	if spam {
 		c.dbSpam.Add(word)
@@ -136,6 +156,9 @@ func (c *Classifier) Classify(text io.Reader) (ClassificationResult, error) {
 		}
 
 		p := word.SpamLikelihood()
+		if p == 0.5 {
+			fmt.Println(word)
+		}
 
 		// Pass scores through a tuned sigmoid so that they stay strictly above 0 and
 		// strictly below 1. This makes calculating with the inverse a bit easier, at

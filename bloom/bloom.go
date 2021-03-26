@@ -58,9 +58,8 @@ func (b *F) Remove(w []byte) {
 	}
 }
 
-// Score returns the approximate number of times w has been added to b. If the result is less
-// than one, the word has definitely never been seen by b.
-func (b *F) Score(w []byte) float64 {
+// Score returns the approximate number of times w has been added to b.
+func (b *F) Score(w []byte) uint64 {
 	var s uint64 = math.MaxUint64
 
 	for i := byte(0); i < numFuncs; i++ {
@@ -70,7 +69,7 @@ func (b *F) Score(w []byte) float64 {
 		}
 	}
 
-	return float64(s)
+	return s
 }
 
 func (b F) String() string {

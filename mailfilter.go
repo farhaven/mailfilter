@@ -28,35 +28,10 @@ import (
 
 	"mailfilter/bloom"
 	"mailfilter/classifier"
-	"mailfilter/ntuple"
 )
 
 type SpamFilter struct {
 	c *classifier.Classifier
-}
-
-// train reads text from in and trains the given classifier to recognize
-// the text as ham or spam, depending on the spam flag.
-func (s *SpamFilter) train(in io.Reader, spam bool, learnFactor int) error {
-	buf := make([]byte, 4)
-	reader := ntuple.New(in)
-
-	for {
-		err := reader.Next(buf)
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			return err
-		}
-
-		err = s.c.Train(buf, spam, learnFactor)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
 }
 
 type ClassifyMode int

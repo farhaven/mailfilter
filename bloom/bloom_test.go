@@ -25,7 +25,7 @@ func TestBloom(t *testing.T) {
 		s := f.Score([]byte(w))
 
 		if s < 1 {
-			t.Errorf("expected score >= 1 for %q, got %f", w, s)
+			t.Errorf("expected score >= 1 for %q, got %v", w, s)
 		}
 	}
 
@@ -41,7 +41,7 @@ func TestBloom(t *testing.T) {
 		s := f.Score([]byte(w))
 
 		if s < 1 {
-			t.Errorf("expected score >= 1 for %q, got %f", w, s)
+			t.Errorf("expected score >= 1 for %q, got %v", w, s)
 		}
 
 	}
@@ -50,7 +50,7 @@ func TestBloom(t *testing.T) {
 		s := f.Score([]byte(w))
 
 		if s >= 1 && w != "foo" {
-			t.Errorf("expected score < 1 for %q, got %f", w, s)
+			t.Errorf("expected score < 1 for %q, got %v", w, s)
 		}
 	}
 }
@@ -85,7 +85,7 @@ func TestBloom_EncodeDecode(t *testing.T) {
 
 	for _, w := range words {
 		s := f1.Score([]byte(w))
-		t.Logf("score for %q: %f", w, s)
+		t.Logf("score for %q: %v", w, s)
 	}
 
 	buf, err := f1.MarshalBinary()
@@ -105,7 +105,7 @@ func TestBloom_EncodeDecode(t *testing.T) {
 		t.Fatalf("unexpected error: %s", err)
 	}
 
-	wantScores := map[string]float64{
+	wantScores := map[string]uint64{
 		"a": 2,
 		"b": 1,
 		"c": 1,
@@ -113,8 +113,9 @@ func TestBloom_EncodeDecode(t *testing.T) {
 
 	for _, w := range words {
 		s := f2.Score([]byte(w))
+
 		if wantScores[w] != s {
-			t.Errorf("expected score %f for %q, got %f", wantScores[w], w, s)
+			t.Errorf("expected score %v for %q, got %v", wantScores[w], w, s)
 		}
 	}
 }
@@ -149,11 +150,9 @@ func TestBloom_RelativeScore(t *testing.T) {
 		sS := fSpam.Score([]byte(w))
 		sT := fTotal.Score([]byte(w))
 
-		maybeBogus := sT < 1 // If total score is less than one, the data is likely bogus
+		pSpam := float64(sS+1) / float64(sT+1)
 
-		pSpam := (sS + 1) / (sT + 1)
-
-		t.Logf("%-10s: %f / %f -> %f (%t/%t) bogus: %t", w, sS, sT, pSpam, isSpam[w], pSpam > 0.5, maybeBogus)
+		t.Logf("%-10s: %v / %v -> %f (%t/%t)", w, sS, sT, pSpam, isSpam[w], pSpam > 0.5)
 	}
 
 	t.Fatal("eh")
@@ -192,8 +191,9 @@ func BenchmarkBloom_AddEncodeDecodeScore(b *testing.B) {
 	for _, s := range strs {
 		s1 := f1.Score(s)
 		s2 := f2.Score(s)
+
 		if s1 != s2 {
-			b.Fatalf("unexpected score for %s: %f != %f", s, s1, s2)
+			b.Fatalf("unexpected score for %s: %v != %v", s, s1, s2)
 		}
 	}
 }
@@ -292,7 +292,7 @@ func BenchmarkF_AddTestData(b *testing.B) {
 	)
 
 	for _, item := range total {
-		score := f.Score(item.w)
+		score := float64(f.Score(item.w))
 
 		mse += math.Pow(float64(item.c)-score, 2)
 
