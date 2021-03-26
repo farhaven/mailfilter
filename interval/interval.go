@@ -1,173 +1,62 @@
 package interval
 
-import (
-	"fmt"
-	"strconv"
-)
+import "sort"
 
-// proto-VEB
-
-const leafUniverse = 64
-
-type protoVEB struct {
-	u       int         // Size of the universe represented by this protoVEB (max number)
-	path    [16]int     // Reused to avoid allocation in derivePath
-	cluster []*protoVEB // length: u
-	summary uint64      // a bit set for every occupied cluster element
+type Interval struct {
+	Start int
+	End   int // inclusive
 }
 
-func (p protoVEB) String() string {
-	return fmt.Sprintf("{u: %v, c: %v, s: %064b}", p.u, p.cluster, p.summary)
+type token struct{}
+
+type Set struct {
+	m map[int]token
 }
 
-func (p *protoVEB) derivePath(size, leafSize, input int) []int {
-	var l int
-	for size > 0 {
-		size /= leafSize
-		l++
-	}
-	l--
-
-	if l > len(p.path) {
-		panic("path too long:" + strconv.Itoa(l))
+func (t *Set) add(val int) {
+	if t.m == nil {
+		t.m = make(map[int]token)
 	}
 
-	for i := l - 1; i >= 0; i-- {
-		p.path[i] = input % leafSize
-		input /= leafSize
-	}
-
-	return p.path[:l]
+	t.m[val] = token{}
 }
 
-func (p *protoVEB) set(val int, path []int) {
-	if p.u == 0 {
-		panic("protoVEB uninitialized")
-	}
-
-	if p.u%leafUniverse != 0 {
-		panic(fmt.Sprintf("bad universe size %v, must be power of %v", p.u, leafUniverse))
-	}
-
-	if val < 0 {
-		panic("invalid value: " + strconv.Itoa(val))
-	}
-
-	if path == nil {
-		path = p.derivePath(p.u, leafUniverse, val)
-	}
-
-	if p.u == leafUniverse {
-		p.summary |= (1 << (val % p.u))
-		return
-	}
-
-	if p.cluster == nil {
-		p.cluster = make([]*protoVEB, leafUniverse)
-	}
-
-	idx := path[0]
-
-	if p.cluster[idx] == nil {
-		p.cluster[idx] = &protoVEB{
-			u: p.u / leafUniverse,
-		}
-	}
-
-	p.cluster[idx].set(val, path[1:])
-}
-
-func (p *protoVEB) slice() []int {
-	if p.u == leafUniverse {
-		res := make([]int, 0, leafUniverse)
-
-		for i := 0; i < leafUniverse; i++ {
-			if p.summary&(1<<i) != 0 {
-				res = append(res, i)
-			}
-		}
-
-		return res
-	}
-
-	res := make([]int, 0)
-
-	for idx, c := range p.cluster {
-		if c == nil {
-			continue
-		}
-
-		cs := c.slice()
-
-		for _, v := range cs {
-			res = append(res, v+(idx*c.u))
-		}
-	}
-
-	return res
-}
-
-type Interval [2]int // Start and End (inclusive)
-
-type Tree struct {
-	Max int
-
-	root *protoVEB
-}
-
-func (t *Tree) add(val int) {
-	if t.root == nil {
-		t.init()
-	}
-
-	t.root.set(val, nil)
-}
-
-func (t *Tree) init() {
-	if t.Max == 0 {
-		panic("maximum unset")
-	}
-
-	universe := leafUniverse
-
-	for universe < t.Max {
-		universe *= leafUniverse
-	}
-
-	t.root = &protoVEB{
-		u: universe,
-	}
-}
-
-func (t *Tree) slice() []Interval {
-	s := t.root.slice()
-	if len(s) == 0 {
+func (t *Set) slice() []Interval {
+	if len(t.m) == 0 {
 		return nil
 	}
 
-	start := s[0]
-	end := s[0]
+	var indices []int
+	for i := range t.m {
+		indices = append(indices, i)
+	}
 
-	var (
-		res  []Interval
-		rest bool
-	)
+	sort.Ints(indices)
 
-	for _, e := range s[1:] {
-		if e == end+1 {
-			end = e
-			rest = true
-		} else {
-			res = append(res, Interval{start, end + 1})
-			start = e
-			end = e
-			rest = false
+	var intervals []Interval
+
+	current := Interval{
+		Start: indices[0],
+		End:   indices[0],
+	}
+
+	for _, i := range indices[1:] {
+		if current.End == i-1 {
+			// We can extend the current interval
+			current.End = i
+			continue
+		}
+
+		intervals = append(intervals, current)
+		current = Interval{
+			Start: i,
+			End:   i,
 		}
 	}
 
-	if rest {
-		res = append(res, Interval{start, end + 1})
+	if len(intervals) == 0 || intervals[len(intervals)-1] != current {
+		intervals = append(intervals, current)
 	}
 
-	return res
+	return intervals
 }
