@@ -140,7 +140,7 @@ func (c *Classifier) Classify(text io.Reader, verbose io.Writer) (Classification
 
 	buf := make([]byte, 4)
 
-	const alpha = 0.9
+	const alpha = 0.975
 
 	var eta float64
 
