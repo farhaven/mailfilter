@@ -4,6 +4,12 @@
 
 This is a very simple Bayesian classifier for RFC2046-formatted mail. It runs as an HTTP server and uses POST requests as its interface.
 
+It uses a counting bloom filter to store ngram frequencies, which means that the amount of storage that it needs is bounded (currently to 128MB, 64MB each for the total counts and spam counts), at the cost of only storing approximations of the counts.
+
+The way the bloom filter is built means that the frequencies will never be under-estimated, but with increasing diversity (which increases the probability of hash collisions), it will very likely get over-estimated. Since this affects both the spam count and the total count, the effects don't quite cancel each other out but are manageable.
+
+The filter segments each text into ngrams of 4 bytes by using a sliding window across the text. This is done to mitigate the negative impact of padding or intentional typos on detection.
+
 Here's how to use it:
 
 ## General usage
@@ -112,8 +118,7 @@ to mailfilter if you press return.
 ## Things it does well (in my opinion)
 Training is reasonably fast. Training my personal archive of OpenBSD's
 Misc mailing list (roughly 70k messages) as ham takes about 2.5
-minutes, almost all of which is used for persisting the updated
-classifier state to disk.
+minutes.
 
 The code is quite small, and it fits quite nicely in a classical pipeline
 of delivery agents and mail filters.
