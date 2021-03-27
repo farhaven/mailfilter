@@ -108,8 +108,6 @@ func (c *Classifier) trainWord(word []byte, spam bool, factor uint64) error {
 	c.dbTotal.Add(word, factor)
 	if spam {
 		c.dbSpam.Add(word, factor)
-	} else {
-		c.dbSpam.Remove(word, factor)
 	}
 
 	return nil
@@ -121,7 +119,7 @@ func sigmoid(x float64) float64 {
 	}
 
 	midpoint := 0.5
-	max := 0.999
+	max := 1.0
 	k := 5.0
 
 	return max / (1.0 + math.Exp(-k*(x-midpoint)))
