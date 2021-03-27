@@ -192,7 +192,11 @@ func main() {
 		defer wg.Done()
 
 		<-ctx.Done()
-		srv.Shutdown(ctx)
+
+		err := srv.Shutdown(ctx)
+		if err != nil {
+			log.Println("can't shut down HTTP server:", err)
+		}
 	}()
 
 	log.Println("starting http server on", *listenAddr)
