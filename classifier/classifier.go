@@ -202,7 +202,7 @@ func (c *Classifier) Classify(text io.Reader, verbose io.Writer) (Result, error)
 		}
 
 		if verbose != nil {
-			fmt.Fprintf(verbose, "%s: %f, l:[%f, %f], η:%f, current score:%f\n", word, s, l1, l2, eta, 1.0/(1.0+math.Exp(eta)))
+			fmt.Fprintf(verbose, "%s: %f, l:[%f - %f = %f], η:%f, current score:%f\n", word, s, l1, l2, l1-l2, eta, 1.0/(1.0+math.Exp(eta)))
 		}
 	}
 
