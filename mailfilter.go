@@ -171,7 +171,7 @@ func main() {
 	signal.Notify(sigChan, os.Interrupt)
 	go func() {
 		s := <-sigChan
-		log.Println("got signal", s, "terminating")
+		log.Printf("got signal %q, terminating", s)
 
 		done()
 	}()
@@ -193,9 +193,12 @@ func main() {
 
 		<-ctx.Done()
 
-		err := srv.Shutdown(ctx)
+		shutdownctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		err := srv.Shutdown(shutdownctx)
 		if err != nil {
-			log.Println("can't shut down HTTP server:", err)
+			log.Println("shutting down HTTP server:", err)
 		}
 	}()
 
