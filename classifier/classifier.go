@@ -46,7 +46,7 @@ func (w Word) SpamLikelihood() float64 {
 }
 
 func (w Word) String() string {
-	return fmt.Sprintf("{%q %v %v -> %.3f}", w.Text, w.Total, w.Spam, w.SpamLikelihood())
+	return fmt.Sprintf("{%q %v %v → %.3f}", w.Text, w.Total, w.Spam, w.SpamLikelihood())
 }
 
 type DB interface {
