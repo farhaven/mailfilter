@@ -53,10 +53,13 @@ func (s *SpamFilter) classify(in io.Reader, out io.Writer, how ClassifyMode, ver
 	var (
 		label classifier.Result
 		err   error
+
+		// Need to buffer output because we can't write to some outputs while reading input (e.g. http)
+		outBuf bytes.Buffer
 	)
 
 	if verbose {
-		label, err = s.c.Classify(io.TeeReader(in, &msg), out)
+		label, err = s.c.Classify(io.TeeReader(in, &msg), &outBuf)
 	} else {
 		label, err = s.c.Classify(io.TeeReader(in, &msg), nil)
 	}
@@ -68,6 +71,13 @@ func (s *SpamFilter) classify(in io.Reader, out io.Writer, how ClassifyMode, ver
 
 	if how == ClassifyPlain {
 		// Just write out the verdict to the output writer
+		if verbose {
+			_, err := io.Copy(out, &outBuf)
+			if err != nil {
+				return errors.Wrap(err, "writing verbose info")
+			}
+		}
+
 		_, err := fmt.Fprintln(out, label)
 		if err != nil {
 			return errors.Wrap(err, "writing verdict")

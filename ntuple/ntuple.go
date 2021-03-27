@@ -39,8 +39,8 @@ func (r *Reader) Next(d []byte) error {
 		if len(r.buf) < len(d) {
 			r.buf = make([]byte, bufSz)
 			n, err := r.in.Read(r.buf)
-			if err != nil && err != io.EOF {
-				return errors.Wrapf(err, "reading from underlying")
+			if err != nil && !errors.Is(err, io.EOF) {
+				return errors.Wrapf(err, "reading from underlying after %d bytes", n)
 			}
 
 			r.buf = r.buf[:n]
