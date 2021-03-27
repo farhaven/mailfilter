@@ -45,11 +45,21 @@ const (
 // it as either spam or ham and writes it to out. The text is assumed to
 // be a single RRC2046-encoded message, and the verdict is added as a
 // header with the name `X-Mailfilter`.
-func (s *SpamFilter) classify(in io.Reader, out io.Writer, how ClassifyMode) error {
+func (s *SpamFilter) classify(in io.Reader, out io.Writer, how ClassifyMode, verbose bool) error {
 	var msg bytes.Buffer
 
 	start := time.Now()
-	label, err := s.c.Classify(io.TeeReader(in, &msg))
+
+	var (
+		label classifier.ClassificationResult
+		err   error
+	)
+
+	if verbose {
+		label, err = s.c.Classify(io.TeeReader(in, &msg), out)
+	} else {
+		label, err = s.c.Classify(io.TeeReader(in, &msg), nil)
+	}
 	if err != nil {
 		return errors.Wrap(err, "classifying")
 	}

@@ -85,7 +85,9 @@ func (s *SpamFilter) classifyHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := s.classify(r.Body, w, mode)
+	verbose := mode == ClassifyPlain && args.Get("verbose") == "true"
+
+	err := s.classify(r.Body, w, mode, verbose)
 	if err != nil {
 		log.Println("can't classify message:", err)
 		code := http.StatusInternalServerError

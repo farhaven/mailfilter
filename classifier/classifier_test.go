@@ -282,7 +282,7 @@ func TestClassifier_Text(t *testing.T) {
 	for i, tc := range texts {
 		buf := bytes.NewBufferString(tc.txt)
 
-		s, err := c.Classify(buf)
+		s, err := c.Classify(buf, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %s", err)
 		}

@@ -135,19 +135,21 @@ func (c ClassificationResult) String() string {
 }
 
 // Classify classifies the given text and returns a label along with a "certainty" value for that label.
-func (c *Classifier) Classify(text io.Reader) (ClassificationResult, error) {
+func (c *Classifier) Classify(text io.Reader, verbose io.Writer) (ClassificationResult, error) {
 	reader := ntuple.New(text)
 
 	buf := make([]byte, 4)
 
-	var scores []float64
+	var eta float64
+
 	for {
 		err := reader.Next(buf)
 		if err != nil && errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
-			return ClassificationResult{}, errors.Wrap(err, "reading input")
+			log.Println("reading input:", err)
+			break
 		}
 
 		word, err := c.getWord(buf)
@@ -163,27 +165,25 @@ func (c *Classifier) Classify(text io.Reader) (ClassificationResult, error) {
 		// towards detecting stuff as ham, since sigmoid(0.5) < 0.5.
 		s := sigmoid(p)
 
-		scores = append(scores, s)
-	}
-
-	eta := float64(0)
-
-	for _, p := range scores {
-		l1 := math.Log(1 - p)
-		l2 := math.Log(p)
+		l1 := math.Log(1 - s)
+		l2 := math.Log(s)
 
 		if math.IsNaN(l1) || math.IsInf(l1, 0) {
-			panic(fmt.Sprintf("l1: %f %f", l1, 1-p))
+			panic(fmt.Sprintf("l1: %f %f %f", l1, 1-p, 1-s))
 		}
 
 		if math.IsNaN(l2) || math.IsInf(l2, 0) {
-			panic(fmt.Sprintf("l2: %f %f", l2, p))
+			panic(fmt.Sprintf("l2: %f %f %f", l2, p, s))
 		}
 
 		eta += l1 - l2
 
 		if math.IsNaN(eta) || math.IsInf(eta, 0) {
 			panic(fmt.Sprintf("eta: %f", eta))
+		}
+
+		if verbose != nil {
+			fmt.Fprintln(verbose, word, s, l1, l2, eta, 1.0/(1.0+math.Exp(eta)))
 		}
 	}
 
