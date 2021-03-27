@@ -11,6 +11,8 @@ import (
 	"mailfilter/ntuple"
 )
 
+const windowSize = 6
+
 type Word struct {
 	Text []byte
 
@@ -82,7 +84,7 @@ func (c *Classifier) getWord(word []byte) (Word, error) {
 }
 
 func (c *Classifier) Train(in io.Reader, spam bool, learnFactor uint64) error {
-	buf := make([]byte, 4)
+	buf := make([]byte, windowSize)
 	reader := ntuple.New(in)
 
 	for {
@@ -141,7 +143,7 @@ func (c Result) String() string {
 func (c *Classifier) Classify(text io.Reader, verbose io.Writer) (Result, error) {
 	reader := ntuple.New(text)
 
-	buf := make([]byte, 4)
+	buf := make([]byte, windowSize)
 
 	const alpha = 0.975
 

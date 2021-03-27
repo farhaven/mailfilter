@@ -8,7 +8,7 @@ It uses a counting bloom filter to store ngram frequencies, which means that the
 
 The way the bloom filter is built means that the frequencies will never be under-estimated, but with increasing diversity (which increases the probability of hash collisions), it will very likely get over-estimated. Since this affects both the spam count and the total count, the effects don't quite cancel each other out but are manageable.
 
-The filter segments each text into ngrams of 4 bytes by using a sliding window across the text. This is done to mitigate the negative impact of padding or intentional typos on detection.
+The filter segments each text into ngrams of 6 bytes by using a sliding window across the text. This is done to mitigate the negative impact of padding or intentional typos on detection.
 
 Here's how to use it:
 
