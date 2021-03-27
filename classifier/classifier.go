@@ -187,23 +187,22 @@ func (c *Classifier) Classify(text io.Reader, verbose io.Writer) (Classification
 		if min > eta {
 			min = eta
 		}
+
 		if max < eta {
 			max = eta
 		}
-
-		// eta += l1 - l2
 
 		if math.IsNaN(eta) || math.IsInf(eta, 0) {
 			panic(fmt.Sprintf("eta: %f", eta))
 		}
 
 		if verbose != nil {
-			fmt.Fprintln(verbose, word, s, l1, l2, eta, 1.0/(1.0+math.Exp(eta)))
+			fmt.Fprintf(verbose, "%s: %f, l:[%f, %f], η:%f, current score:%f\n", word, s, l1, l2, eta, 1.0/(1.0+math.Exp(eta)))
 		}
 	}
 
 	if verbose != nil {
-		fmt.Fprintln(verbose, eta, min, max)
+		fmt.Fprintln(verbose, "final η:", eta, "min η:", min, "max η:", max)
 	}
 
 	score := 1.0 / (1.0 + math.Exp(eta))
