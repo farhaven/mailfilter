@@ -122,7 +122,7 @@ func sigmoid(x float64) float64 {
 
 	midpoint := 0.5
 	max := 0.999
-	k := 10.0
+	k := 5.0
 
 	return max / (1.0 + math.Exp(-k*(x-midpoint)))
 }
