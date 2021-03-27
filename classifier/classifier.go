@@ -140,7 +140,12 @@ func (c *Classifier) Classify(text io.Reader, verbose io.Writer) (Classification
 
 	buf := make([]byte, 4)
 
+	const alpha = 0.9
+
 	var eta float64
+
+	min := math.Inf(1)
+	max := math.Inf(-1)
 
 	for {
 		err := reader.Next(buf)
@@ -176,7 +181,17 @@ func (c *Classifier) Classify(text io.Reader, verbose io.Writer) (Classification
 			panic(fmt.Sprintf("l2: %f %f %f", l2, p, s))
 		}
 
+		eta *= alpha
 		eta += l1 - l2
+
+		if min > eta {
+			min = eta
+		}
+		if max < eta {
+			max = eta
+		}
+
+		// eta += l1 - l2
 
 		if math.IsNaN(eta) || math.IsInf(eta, 0) {
 			panic(fmt.Sprintf("eta: %f", eta))
@@ -185,6 +200,10 @@ func (c *Classifier) Classify(text io.Reader, verbose io.Writer) (Classification
 		if verbose != nil {
 			fmt.Fprintln(verbose, word, s, l1, l2, eta, 1.0/(1.0+math.Exp(eta)))
 		}
+	}
+
+	if verbose != nil {
+		fmt.Fprintln(verbose, eta, min, max)
 	}
 
 	score := 1.0 / (1.0 + math.Exp(eta))
