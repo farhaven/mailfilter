@@ -51,7 +51,7 @@ func (s *SpamFilter) classify(in io.Reader, out io.Writer, how ClassifyMode, ver
 	start := time.Now()
 
 	var (
-		label classifier.ClassificationResult
+		label classifier.Result
 		err   error
 	)
 

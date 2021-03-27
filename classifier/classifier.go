@@ -125,17 +125,20 @@ func sigmoid(x float64) float64 {
 	return max / (1.0 + math.Exp(-k*(x-midpoint)))
 }
 
-type ClassificationResult struct {
+type Result struct {
 	Label string
 	Score float64
+	Eta   float64
+	Min   float64
+	Max   float64
 }
 
-func (c ClassificationResult) String() string {
-	return fmt.Sprintf("label=%q, score=%.6f", c.Label, c.Score)
+func (c Result) String() string {
+	return fmt.Sprintf("label=%q, score=%.6f, η:%f [%f, %f]", c.Label, c.Score, c.Eta, c.Min, c.Max)
 }
 
 // Classify classifies the given text and returns a label along with a "certainty" value for that label.
-func (c *Classifier) Classify(text io.Reader, verbose io.Writer) (ClassificationResult, error) {
+func (c *Classifier) Classify(text io.Reader, verbose io.Writer) (Result, error) {
 	reader := ntuple.New(text)
 
 	buf := make([]byte, 4)
@@ -159,7 +162,7 @@ func (c *Classifier) Classify(text io.Reader, verbose io.Writer) (Classification
 
 		word, err := c.getWord(buf)
 		if err != nil {
-			return ClassificationResult{}, errors.Wrap(err, "getting word counts")
+			return Result{}, errors.Wrap(err, "getting word counts")
 		}
 
 		p := word.SpamLikelihood()
@@ -210,9 +213,12 @@ func (c *Classifier) Classify(text io.Reader, verbose io.Writer) (Classification
 		panic(fmt.Sprintf("score: %f", score))
 	}
 
-	result := ClassificationResult{
+	result := Result{
 		Score: score,
 		Label: "ham",
+		Eta:   eta,
+		Max:   max,
+		Min:   min,
 	}
 
 	if result.Score > c.thresholdUnsure {
