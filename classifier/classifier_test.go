@@ -269,10 +269,10 @@ func TestClassifier_Text(t *testing.T) {
 		expectScore float64
 		expectLabel string
 	}{
-		{"buy coins now", 1, "spam"},
+		{"buy coins now", 0.9241, "spam"},
 		{"foo fnord bla", 0, "ham"},
 		{"asdf yes", 0.5, "unsure"},
-		{"foo bar snafu", 0, "ham"},
+		{"foo bar snafu", 0.0758, "ham"},
 		{"i like my friend", 0, "ham"},
 		{"this is spam", 1, "spam"},
 	}
