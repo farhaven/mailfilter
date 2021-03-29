@@ -136,7 +136,7 @@ type Result struct {
 }
 
 func (c Result) String() string {
-	return fmt.Sprintf("label=%q, score=%.6f, η:%f [%f, %f]", c.Label, c.Score, c.Eta, c.Min, c.Max)
+	return fmt.Sprintf("label=%q, score=%.6f, η=%.3f [%.4f, %.4f]", c.Label, c.Score, c.Eta, c.Min, c.Max)
 }
 
 // Classify classifies the given text and returns a label along with a "certainty" value for that label.
