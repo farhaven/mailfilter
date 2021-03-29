@@ -145,8 +145,6 @@ func (c *Classifier) Classify(text io.Reader, verbose io.Writer) (Result, error)
 
 	buf := make([]byte, windowSize)
 
-	const alpha = 0.99
-
 	var eta float64
 
 	min := math.Inf(1)
@@ -186,7 +184,6 @@ func (c *Classifier) Classify(text io.Reader, verbose io.Writer) (Result, error)
 			panic(fmt.Sprintf("l2: %f %f %f", l2, p, s))
 		}
 
-		eta *= alpha
 		eta += l1 - l2
 
 		if min > eta {
