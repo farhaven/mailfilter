@@ -150,8 +150,6 @@ func (c *Classifier) Classify(text io.Reader, verbose io.Writer) (Result, error)
 	min := math.Inf(1)
 	max := math.Inf(-1)
 
-	seenWords := make(map[string]bool)
-
 	for {
 		err := reader.Next(buf)
 		if err != nil && errors.Is(err, io.EOF) {
@@ -166,11 +164,6 @@ func (c *Classifier) Classify(text io.Reader, verbose io.Writer) (Result, error)
 		if err != nil {
 			return Result{}, errors.Wrap(err, "getting word counts")
 		}
-
-		if seenWords[string(word.Text)] {
-			continue
-		}
-		seenWords[string(word.Text)] = true
 
 		p := word.SpamLikelihood()
 
