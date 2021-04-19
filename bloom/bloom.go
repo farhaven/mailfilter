@@ -7,7 +7,7 @@ import (
 
 const (
 	filterSize = 1_000_000
-	numFuncs   = 8
+	numFuncs   = 16
 )
 
 type F struct {
