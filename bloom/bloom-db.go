@@ -107,15 +107,7 @@ func (d *DB) Add(w []byte, delta uint64) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	d.f.Add(w, uint64(delta))
-	d.dirty = true
-}
-
-func (d *DB) Remove(w []byte, delta uint64) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	d.f.Remove(w, delta)
+	d.f.Add(w, uint32(delta))
 	d.dirty = true
 }
 
@@ -124,5 +116,5 @@ func (d *DB) Score(w []byte) uint64 {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	return d.f.Score(w)
+	return uint64(d.f.Score(w))
 }

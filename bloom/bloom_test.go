@@ -30,31 +30,6 @@ func TestBloom(t *testing.T) {
 			t.Errorf("expected score >= 1 for %q, got %v", w, s)
 		}
 	}
-
-	words = append(words, []string{"aaa", "bbb"}...)
-
-	const split = 2
-
-	for _, w := range words[split:] {
-		f.Remove([]byte(w), 1)
-	}
-
-	for _, w := range words[:split] {
-		s := f.Score([]byte(w))
-
-		if s < 1 {
-			t.Errorf("expected score >= 1 for %q, got %v", w, s)
-		}
-
-	}
-
-	for _, w := range words[split:] {
-		s := f.Score([]byte(w))
-
-		if s >= 1 && w != "foo" {
-			t.Errorf("expected score < 1 for %q, got %v", w, s)
-		}
-	}
 }
 
 func TestBloom_HowManyFnords(t *testing.T) {
@@ -108,7 +83,7 @@ func TestBloom_EncodeDecode(t *testing.T) {
 		t.Fatalf("unexpected error: %s", err)
 	}
 
-	wantScores := map[string]uint64{
+	wantScores := map[string]uint32{
 		"a": 2,
 		"b": 1,
 		"c": 1,
@@ -301,10 +276,10 @@ func BenchmarkF_AddTestData(b *testing.B) {
 
 		mse += math.Pow(float64(item.c)-score, 2)
 
-		l1 := math.Log(float64(item.c)) / math.Log(10)
-		l2 := math.Log(score) / math.Log(10)
+		l1 := math.Log(float64(item.c))
+		l2 := math.Log(score)
 
-		if math.Abs(l1-l2) > 2 {
+		if math.Abs(l1-l2) > 4 {
 			b.Logf("got unexpected score for %q: want %v (%v), have %v (%v)", item.w, item.c, l1, score, l2)
 			errors++
 		}
