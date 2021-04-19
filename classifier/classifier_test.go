@@ -12,6 +12,12 @@ import (
 	"testing"
 )
 
+const windowSize = 4
+
+type Runnable interface {
+	Run(context.Context)
+}
+
 func TestWord_SpamLikelihood(t *testing.T) {
 	testCases := []struct {
 		name                 string
@@ -98,8 +104,9 @@ func TestClassifier_TrainSimple(t *testing.T) {
 
 	dbTotal := &testDB{}
 	dbSpam := &testDB{}
+	dbHam := &testDB{}
 
-	c := New(dbTotal, dbSpam, 0.3, 0.7)
+	c := New(dbTotal, dbHam, dbSpam, 0.3, 0.7, windowSize)
 
 	for _, w := range words {
 		err := c.trainWord([]byte(w.word), w.spam, 1)
@@ -160,6 +167,11 @@ func TestClassifier_Train(t *testing.T) {
 		t.Fatalf("can't create new bloom db: %s", err)
 	}
 
+	dbHam, err := bloom.NewDB(tmp, "ham")
+	if err != nil {
+		t.Fatalf("can't create new bloom db: %s", err)
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
 	defer func() {
@@ -167,18 +179,18 @@ func TestClassifier_Train(t *testing.T) {
 		wg.Wait()
 	}()
 
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		dbTotal.Run(ctx)
-	}()
+	wg.Add(3)
 
-	go func() {
+	run := func(db Runnable) {
 		defer wg.Done()
-		dbTotal.Run(ctx)
-	}()
+		db.Run(ctx)
+	}
 
-	c := New(dbTotal, dbSpam, 0.3, 0.7)
+	go run(dbHam)
+	go run(dbSpam)
+	go run(dbTotal)
+
+	c := New(dbTotal, dbHam, dbSpam, 0.3, 0.7, windowSize)
 
 	for _, w := range words {
 		err := c.trainWord([]byte(w.word), w.spam, 1)
@@ -214,6 +226,11 @@ func TestClassifier_Text(t *testing.T) {
 		t.Fatalf("can't open bloom db: %s", err)
 	}
 
+	dbHam, err := bloom.NewDB(tmp, "ham")
+	if err != nil {
+		t.Fatalf("can't open bloom db: %s", err)
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
 	defer func() {
@@ -221,19 +238,18 @@ func TestClassifier_Text(t *testing.T) {
 		wg.Wait()
 	}()
 
-	wg.Add(2)
+	wg.Add(3)
 
-	go func() {
+	run := func(db Runnable) {
 		defer wg.Done()
-		dbTotal.Run(ctx)
-	}()
+		db.Run(ctx)
+	}
 
-	go func() {
-		defer wg.Done()
-		dbTotal.Run(ctx)
-	}()
+	go run(dbHam)
+	go run(dbSpam)
+	go run(dbTotal)
 
-	c := New(dbTotal, dbSpam, 0.3, 0.7)
+	c := New(dbTotal, dbHam, dbSpam, 0.3, 0.7, windowSize)
 
 	// Train the classifier
 	textSpam := []string{
@@ -242,18 +258,18 @@ func TestClassifier_Text(t *testing.T) {
 		"security update",
 	}
 
-	textHam := []string{
-		"how are you doing?",
-		"foo is a fnord, so it's good. some bla as well.",
-		"all of these worlds are yours, except europa. attempt no landing there.",
-		"my friends are cool",
-	}
-
 	for _, txt := range textSpam {
 		err := c.Train(bytes.NewBufferString(txt), true, 1)
 		if err != nil {
 			t.Fatalf("can't train text %q: %s", txt, err)
 		}
+	}
+
+	textHam := []string{
+		"how are you doing?",
+		"foo is a fnord, so it's good. some bla as well.",
+		"all of these worlds are yours, except europa. attempt no landing there.",
+		"my friends are cool",
 	}
 
 	for _, txt := range textHam {
@@ -286,6 +302,8 @@ func TestClassifier_Text(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %s", err)
 		}
+
+		t.Logf("text: %q, score: %s", tc.txt, s)
 
 		if s.Score < 0 {
 			t.Fatalf("score too low: %s", s)

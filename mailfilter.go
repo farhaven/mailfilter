@@ -163,9 +163,14 @@ func main() {
 		log.Fatalf("can't open bloom db: %s", err)
 	}
 
+	dbHam, err := bloom.NewDB(*dbPath, "ham")
+	if err != nil {
+		log.Fatalf("can't open bloom db: %s", err)
+	}
+
 	var wg sync.WaitGroup
 
-	wg.Add(2)
+	wg.Add(3)
 
 	go func() {
 		defer wg.Done()
@@ -177,6 +182,11 @@ func main() {
 		dbSpam.Run(ctx)
 	}()
 
+	go func() {
+		defer wg.Done()
+		dbHam.Run(ctx)
+	}()
+
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt)
 	go func() {
@@ -186,7 +196,7 @@ func main() {
 		done()
 	}()
 
-	c := classifier.New(dbTotal, dbSpam, *thresholdUnsure, *thresholdSpam)
+	c := classifier.New(dbTotal, dbHam, dbSpam, *thresholdUnsure, *thresholdSpam, 6)
 
 	s := SpamFilter{c}
 	http.HandleFunc("/", s.handleIndex)

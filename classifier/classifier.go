@@ -11,14 +11,36 @@ import (
 	"mailfilter/ntuple"
 )
 
-const windowSize = 6
-
 type Word struct {
 	Text []byte
 
 	// Number of times this word has been seen in all messages and in spam messages
 	Total uint64
+	Ham   uint64
 	Spam  uint64
+}
+
+func (w Word) HamLikelihood() float64 {
+	if w.Total == 0 {
+		return 0.5
+	}
+
+	score := float64(w.Ham) / float64(w.Total)
+
+	if math.IsInf(score, 0) {
+		panic(fmt.Sprintf("infinite score for %v", w))
+	}
+
+	if math.IsNaN(score) {
+		panic(fmt.Sprintf("nan score for %v", w))
+	}
+
+	if score < 0 || score > 1 {
+		log.Printf("possibly corrupt database: score for {%q, %v, %v}: %f", w.Text, w.Total, w.Ham, score)
+		score = 0.5
+	}
+
+	return score
 }
 
 func (w Word) SpamLikelihood() float64 {
@@ -51,25 +73,30 @@ func (w Word) String() string {
 
 type DB interface {
 	Add([]byte, uint64)
-	Remove([]byte, uint64)
 	Score([]byte) uint64 // (approximate) count of times that the sequences has been added to the db
 }
 
 type Classifier struct {
 	dbTotal DB
 	dbSpam  DB
+	dbHam   DB
 
 	thresholdUnsure float64
 	thresholdSpam   float64
+
+	windowSize int
 }
 
-func New(dbTotal, dbSpam DB, thresholdUnsure, thresholdSpam float64) *Classifier {
+func New(dbTotal, dbHam, dbSpam DB, thresholdUnsure, thresholdSpam float64, windowSize int) *Classifier {
 	return &Classifier{
 		dbTotal: dbTotal,
 		dbSpam:  dbSpam,
+		dbHam:   dbHam,
 
 		thresholdUnsure: thresholdUnsure,
 		thresholdSpam:   thresholdSpam,
+
+		windowSize: windowSize,
 	}
 }
 
@@ -78,13 +105,14 @@ func (c *Classifier) getWord(word []byte) (Word, error) {
 		Text:  word,
 		Total: c.dbTotal.Score(word),
 		Spam:  c.dbSpam.Score(word),
+		Ham:   c.dbHam.Score(word),
 	}
 
 	return w, nil
 }
 
 func (c *Classifier) Train(in io.Reader, spam bool, learnFactor uint64) error {
-	buf := make([]byte, windowSize)
+	buf := make([]byte, c.windowSize)
 	reader := ntuple.New(in)
 
 	for {
@@ -110,6 +138,8 @@ func (c *Classifier) trainWord(word []byte, spam bool, factor uint64) error {
 	c.dbTotal.Add(word, factor)
 	if spam {
 		c.dbSpam.Add(word, factor)
+	} else {
+		c.dbHam.Add(word, factor)
 	}
 
 	return nil
@@ -143,7 +173,7 @@ func (c Result) String() string {
 func (c *Classifier) Classify(text io.Reader, verbose io.Writer) (Result, error) {
 	reader := ntuple.New(text)
 
-	buf := make([]byte, windowSize)
+	buf := make([]byte, c.windowSize)
 
 	var eta float64
 
@@ -165,23 +195,23 @@ func (c *Classifier) Classify(text io.Reader, verbose io.Writer) (Result, error)
 			return Result{}, errors.Wrap(err, "getting word counts")
 		}
 
-		p := word.SpamLikelihood()
+		pSpam := word.SpamLikelihood()
+		pHam := word.HamLikelihood()
 
 		// Pass scores through a tuned sigmoid so that they stay strictly above 0 and
 		// strictly below 1. This makes calculating with the inverse a bit easier, at
 		// the expense of never returning an absolute verdict, and slightly biasing
 		// towards detecting stuff as ham, since sigmoid(0.5) < 0.5.
-		s := sigmoid(p)
 
-		l1 := math.Log(1 - s)
-		l2 := math.Log(s)
+		l1 := math.Log(sigmoid(pHam))
+		l2 := math.Log(sigmoid(pSpam))
 
 		if math.IsNaN(l1) || math.IsInf(l1, 0) {
-			panic(fmt.Sprintf("l1: %f %f %f", l1, 1-p, 1-s))
+			panic(fmt.Sprintf("l1: %f %f", l1, pHam))
 		}
 
 		if math.IsNaN(l2) || math.IsInf(l2, 0) {
-			panic(fmt.Sprintf("l2: %f %f %f", l2, p, s))
+			panic(fmt.Sprintf("l2: %f %f", l2, pSpam))
 		}
 
 		eta += l1 - l2
@@ -199,7 +229,7 @@ func (c *Classifier) Classify(text io.Reader, verbose io.Writer) (Result, error)
 		}
 
 		if verbose != nil {
-			fmt.Fprintf(verbose, "%s: %f, l:[%f - %f = %f], η:%f, current score:%f\n", word, s, l1, l2, l1-l2, eta, 1.0/(1.0+math.Exp(eta)))
+			fmt.Fprintf(verbose, "%s: %f/%f, l:[%f - %f = %f], η:%f, current score:%f\n", word, pHam, pSpam, l1, l2, l1-l2, eta, 1.0/(1.0+math.Exp(eta)))
 		}
 	}
 
