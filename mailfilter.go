@@ -43,7 +43,7 @@ const (
 
 // classify reads a text from in, asks the given classifier to classify
 // it as either spam or ham and writes it to out. The text is assumed to
-// be a single RRC2046-encoded message, and the verdict is added as a
+// be a single RFC2046-encoded message, and the verdict is added as a
 // header with the name `X-Mailfilter`.
 func (s *SpamFilter) classify(in io.Reader, out io.Writer, how ClassifyMode, verbose bool) error {
 	var msg bytes.Buffer
