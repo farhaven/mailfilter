@@ -132,3 +132,29 @@ sit on my couch and relax"-type project. The following caveats apply:
 * There are only three labels: "spam", "unsure" and "ham"
 
 Each of those may change, or it may stay that way forever.
+
+# Tools
+
+## `verbose2csv.awk`
+
+This script can be used to convert the output of verbose classification to a CSV file, for example for plotting with the gnuplot script in `tools/verbose.plt`.
+
+The rows in the generated CSV look like this:
+
+```
+...
+8, -3.952412, 0.981154
+...
+```
+
+From left to right, the elements have the following meaning:
+
+* `8`: The index of the first byte of the window for which this score was generated
+* `-3.952412`: Current η
+* `0.981154`: Current estimated probability that the message is spam
+
+When plotting these with `tools/verbose.plt`, the left Y axis will show the η, while the right Y axis will show the estimated probability. The script uses two axes because the range for η is [-inf, inf] while the range for the probability is [0, 1].
+
+The relationship between score and η is:
+
+	score = 1/(1 + e^η)
