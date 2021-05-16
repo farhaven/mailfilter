@@ -164,3 +164,7 @@ When plotting these with `tools/verbose.plt`, the left Y axis will show the η, 
 The relationship between score and η is:
 
 	score = 1/(1 + e^η)
+
+The plot will look a bit like this:
+
+<img src="doc/plot.png" width="95%"/>
