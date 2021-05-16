@@ -137,7 +137,13 @@ Each of those may change, or it may stay that way forever.
 
 ## `verbose2csv.awk`
 
-This script can be used to convert the output of verbose classification to a CSV file, for example for plotting with the gnuplot script in `tools/verbose.plt`.
+This script can be used to convert the output of verbose classification to a CSV file, for example for plotting with the gnuplot script in `tools/verbose.plt`. To get the input data for `tools/verbose2csv.awk`, ask the classifier to filter a message with `mode=plain&verbose=true`:
+
+```
+curl -f -XPOST --data-binary @/tmp/message.txt 'http://localhost:7999/classify?mode=plain&verbose=true' | \
+	awk -f tools/verbose2csv.awk | \
+	tee /tmp/foo.csv && gnuplot tools/verbose.plt
+```
 
 The rows in the generated CSV look like this:
 

@@ -5,7 +5,7 @@ set y2tics
 
 set xzeroaxis
 
-plot 'foo.csv' using 1:2 with lines title "Eta", \
-	'foo.csv' using 1:3 with lines title "Score" axes x1y2
+plot '/tmp/foo.csv' using 1:2 with lines title "Eta", \
+	'/tmp/foo.csv' using 1:3 with lines title "Score" axes x1y2
 
 pause -1
